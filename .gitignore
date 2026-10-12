@@ -1,0 +1,12 @@
+# Build output (published as GitHub Releases instead)
+build/bin/
+build/windows/installer/tmp/
+build/windows/installer/wails_tools.nsh
+frontend/wailsjs/
+*.exe
+
+# Local tooling and environments
+.venv/
+docs/preview/
+docs/banner/
+*.log

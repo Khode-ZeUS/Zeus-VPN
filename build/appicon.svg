@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#231c6b"/>
+      <stop offset="1" stop-color="#070920"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#6d7dff" stop-opacity="0.65"/>
+      <stop offset="1" stop-color="#6d7dff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="bolt" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#fff7c2"/>
+      <stop offset="0.45" stop-color="#ffd23f"/>
+      <stop offset="1" stop-color="#ff8a1c"/>
+    </linearGradient>
+    <filter id="blur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="34"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" rx="230" fill="url(#bg)"/>
+  <circle cx="512" cy="512" r="420" fill="url(#glow)"/>
+  <circle cx="512" cy="512" r="330" fill="none" stroke="#ffffff" stroke-opacity="0.07" stroke-width="4"/>
+  <circle cx="512" cy="512" r="250" fill="none" stroke="#ffffff" stroke-opacity="0.05" stroke-width="3"/>
+  <path d="M566 120 L282 580 L478 580 L404 904 L748 424 L548 424 L676 120 Z" fill="#ffb627" opacity="0.75" filter="url(#blur)"/>
+  <path d="M566 120 L282 580 L478 580 L404 904 L748 424 L548 424 L676 120 Z" fill="url(#bolt)" stroke="#fff3b8" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M566 120 L282 580 L478 580 L540 424 L548 424 L676 120 Z" fill="#ffffff" opacity="0.16"/>
+</svg>

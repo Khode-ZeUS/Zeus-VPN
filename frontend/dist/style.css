@@ -147,6 +147,12 @@ body.connected .bg-glow {
   animation: spin 1.1s linear infinite;
 }
 .orb[data-status="connecting"] .orb-core { color: #c6b8ff; }
+.orb[data-status="reconnecting"] .orb-ring {
+  background: conic-gradient(from 0deg, transparent 0 55%, var(--amber) 80%, #ffe2b0 100%);
+  animation: spin 1.1s linear infinite;
+}
+.orb[data-status="reconnecting"] .orb-core { color: var(--amber); }
+body.reconnecting .status-text { color: var(--amber); }
 .orb[data-status="connected"] .orb-ring { background: conic-gradient(var(--green), #1fb8ff, var(--green)); animation: spin 6s linear infinite; }
 .orb[data-status="connected"]::before { background: radial-gradient(circle, rgba(46, 230, 168, 0.28), transparent 65%); animation: breathe 3s ease-in-out infinite; }
 .orb[data-status="connected"] .orb-core {

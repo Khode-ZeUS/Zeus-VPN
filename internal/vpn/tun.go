@@ -153,6 +153,14 @@ func Start(b *Binding, opts Options) (*VPN, error) {
 	return v, nil
 }
 
+// LUID identifies the virtual adapter (for firewall rules).
+func (v *VPN) LUID() uint64 {
+	if l, ok := v.tunIf.(interface{ LUID() uint64 }); ok {
+		return l.LUID()
+	}
+	return 0
+}
+
 func (v *VPN) Close() {
 	v.cancel()
 	v.stack.Close()

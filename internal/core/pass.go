@@ -185,7 +185,7 @@ func (e *Engine) UseAccount(email string) error {
 	if err := e.Auth.SetActive(email); err != nil {
 		return err
 	}
-	if e.State().Status != StatusConnected {
+	if st := e.State().Status; st != StatusConnected && st != StatusReconnecting {
 		e.update(func(s *State) { s.Account = email })
 		return nil
 	}

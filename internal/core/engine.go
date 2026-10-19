@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"zeusvpn/internal/killswitch"
 	"zeusvpn/internal/mozilla"
 	"zeusvpn/internal/netx"
 	"zeusvpn/internal/store"
@@ -31,6 +32,9 @@ const (
 	StatusConnecting    = "connecting"
 	StatusConnected     = "connected"
 	StatusDisconnecting = "disconnecting"
+	// StatusReconnecting means the tunnel stopped working and is being
+	// restored; the kill switch, if enabled, blocks traffic meanwhile.
+	StatusReconnecting = "reconnecting"
 )
 
 type ServerInfo struct {
@@ -170,6 +174,10 @@ func (e *Engine) SaveSettings(s store.Settings) error {
 	e.settings = s
 	e.mu.Unlock()
 	netx.SetSplitMode(s.TLSSplit)
+	if !s.KillSwitch && killswitch.Active() {
+		killswitch.Disable()
+		e.Log("info", "kill switch turned off: internet unblocked")
+	}
 	e.update(func(st *State) {
 		if st.Status == StatusDisconnected {
 			st.Mode = s.Mode
@@ -287,6 +295,7 @@ func (e *Engine) Connect() {
 			return
 		}
 		go e.renewLoop(ctx)
+		go e.healthLoop(ctx)
 		go e.verifyExit(ctx)
 	}()
 }
@@ -294,6 +303,9 @@ func (e *Engine) Connect() {
 func (e *Engine) connect(ctx context.Context, st store.Settings) error {
 	if st.Mode == store.ModeTUN && !IsElevated() {
 		return errors.New("full VPN mode needs administrator rights")
+	}
+	if st.KillSwitch && !IsElevated() {
+		return errors.New("the kill switch needs administrator rights")
 	}
 	if !e.Auth.LoggedIn() {
 		return ErrNotLoggedIn
@@ -462,6 +474,10 @@ func (e *Engine) Traffic() (up, down int64) {
 }
 
 func (e *Engine) teardown() {
+	if killswitch.Active() {
+		killswitch.Disable()
+		e.Log("info", "kill switch off: internet unblocked")
+	}
 	e.mu.Lock()
 	v, mixed, up, b := e.vpn, e.mixed, e.up, e.binding
 	e.vpn, e.mixed, e.up, e.binding = nil, nil, nil, nil

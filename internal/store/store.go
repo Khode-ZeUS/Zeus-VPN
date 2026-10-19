@@ -29,6 +29,7 @@ type Settings struct {
 	AutoConnect bool   `json:"auto_connect"`
 	AutoSwitch  bool   `json:"auto_switch"`
 	TLSSplit    string `json:"tls_split"`
+	KillSwitch  bool   `json:"kill_switch"`
 	// Email is only read to migrate single-account installs.
 	Email string `json:"email,omitempty"`
 }

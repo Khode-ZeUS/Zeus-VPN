@@ -110,14 +110,39 @@ func (u *Upstream) renewAfterRejection(ctx context.Context, status int, rejected
 	return true
 }
 
-func (u *Upstream) Host() string { return u.host }
+func (u *Upstream) Host() string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.host
+}
+
+// Retarget moves the tunnel to another server: open sessions are closed and
+// new connections go to host:port.
+func (u *Upstream) Retarget(ctx context.Context, host string, port int) error {
+	ips, err := netx.LookupHost(ctx, host)
+	if err != nil {
+		return fmt.Errorf("could not resolve %s: %w", host, err)
+	}
+	u.mu.Lock()
+	u.host, u.port, u.addrs = host, port, ips
+	old := u.conns
+	u.conns = nil
+	u.mu.Unlock()
+	for _, cc := range old {
+		cc.Close()
+	}
+	return nil
+}
 
 func (u *Upstream) SetToken(token string) { u.token.Store(&token) }
 
 // Warmup establishes the first session so connection problems surface
 // before we claim to be connected.
 func (u *Upstream) Warmup(ctx context.Context) error {
-	cc, err := u.newConn(ctx)
+	u.mu.Lock()
+	ep := u.endpoint()
+	u.mu.Unlock()
+	cc, err := u.newConn(ctx, ep)
 	if err != nil {
 		return err
 	}
@@ -127,14 +152,24 @@ func (u *Upstream) Warmup(ctx context.Context) error {
 	return nil
 }
 
-func (u *Upstream) handshake(ctx context.Context, ip netip.Addr) (*tls.Conn, error) {
+// endpoint is a snapshot of the server to dial; Retarget may change it.
+type endpoint struct {
+	host  string
+	port  int
+	addrs []netip.Addr
+}
+
+// endpoint must be called with u.mu held.
+func (u *Upstream) endpoint() endpoint { return endpoint{u.host, u.port, u.addrs} }
+
+func (u *Upstream) handshake(ctx context.Context, ep endpoint, ip netip.Addr) (*tls.Conn, error) {
 	dctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	raw, err := netx.DialContext(dctx, "tcp", net.JoinHostPort(ip.String(), strconv.Itoa(u.port)))
+	raw, err := netx.DialContext(dctx, "tcp", net.JoinHostPort(ip.String(), strconv.Itoa(ep.port)))
 	if err != nil {
 		return nil, err
 	}
-	tc := tls.Client(raw, &tls.Config{ServerName: u.host, NextProtos: []string{"h2"}, MinVersion: tls.VersionTLS12})
+	tc := tls.Client(raw, &tls.Config{ServerName: ep.host, NextProtos: []string{"h2"}, MinVersion: tls.VersionTLS12})
 	if err := tc.HandshakeContext(dctx); err != nil {
 		raw.Close()
 		return nil, err
@@ -142,15 +177,15 @@ func (u *Upstream) handshake(ctx context.Context, ip netip.Addr) (*tls.Conn, err
 	return tc, nil
 }
 
-func (u *Upstream) newConn(ctx context.Context) (*http2.ClientConn, error) {
+func (u *Upstream) newConn(ctx context.Context, ep endpoint) (*http2.ClientConn, error) {
 	var lastErr error
-	for _, ip := range u.addrs {
-		wasBlocked := netx.HostBlocked(u.host)
-		tc, err := u.handshake(ctx, ip)
-		if err != nil && !wasBlocked && netx.HostBlocked(u.host) && ctx.Err() == nil {
+	for _, ip := range ep.addrs {
+		wasBlocked := netx.HostBlocked(ep.host)
+		tc, err := u.handshake(ctx, ep, ip)
+		if err != nil && !wasBlocked && netx.HostBlocked(ep.host) && ctx.Err() == nil {
 			// The network cut off a plain handshake; retry with the server
 			// name fragmented.
-			tc, err = u.handshake(ctx, ip)
+			tc, err = u.handshake(ctx, ep, ip)
 		}
 		if err != nil {
 			lastErr = err
@@ -158,7 +193,7 @@ func (u *Upstream) newConn(ctx context.Context) (*http2.ClientConn, error) {
 		}
 		if p := tc.ConnectionState().NegotiatedProtocol; p != "h2" {
 			tc.Close()
-			lastErr = fmt.Errorf("%s did not negotiate HTTP/2 (got %q)", u.host, p)
+			lastErr = fmt.Errorf("%s did not negotiate HTTP/2 (got %q)", ep.host, p)
 			continue
 		}
 		cc, err := u.transport.NewClientConn(tc)
@@ -172,7 +207,7 @@ func (u *Upstream) newConn(ctx context.Context) (*http2.ClientConn, error) {
 	if lastErr == nil {
 		lastErr = errors.New("no addresses")
 	}
-	return nil, fmt.Errorf("could not connect to VPN server %s: %w", u.host, lastErr)
+	return nil, fmt.Errorf("could not connect to VPN server %s: %w", ep.host, lastErr)
 }
 
 // session returns a client conn with a reserved stream slot.
@@ -198,7 +233,7 @@ func (u *Upstream) session(ctx context.Context) (*http2.ClientConn, error) {
 	if picked != nil {
 		return picked, nil
 	}
-	cc, err := u.newConn(ctx)
+	cc, err := u.newConn(ctx, u.endpoint())
 	if err != nil {
 		return nil, err
 	}

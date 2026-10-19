@@ -132,6 +132,20 @@ func SaveSettings(s Settings) error {
 	return writeAtomic("settings.json", b)
 }
 
+// SaveJSON and LoadJSON keep non-secret caches (e.g. the server list).
+func SaveJSON(name string, v any) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	return writeAtomic(name, b)
+}
+
+func LoadJSON(name string, v any) bool {
+	b, err := os.ReadFile(path(name))
+	return err == nil && json.Unmarshal(b, v) == nil
+}
+
 func readProtected(name string, v any) bool {
 	b, err := os.ReadFile(path(name))
 	if err != nil {

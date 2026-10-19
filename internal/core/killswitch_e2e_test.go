@@ -15,7 +15,9 @@ import (
 
 // curlOK reports whether another program can reach the internet directly.
 func curlOK() bool {
-	out, _ := exec.Command("curl.exe", "-s", "--noproxy", "*", "--max-time", "8", "-o", "NUL", "-w", "%{http_code}", "https://www.digikala.com/").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	out, _ := exec.CommandContext(ctx, "curl.exe", "-s", "--noproxy", "*", "--max-time", "8", "-o", "NUL", "-w", "%{http_code}", "https://www.digikala.com/").Output()
 	code := strings.TrimSpace(string(out))
 	return code != "" && code != "000"
 }

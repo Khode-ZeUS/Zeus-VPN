@@ -70,10 +70,20 @@ func (s Server) connectTarget() (string, int, bool) {
 	return "", 0, false
 }
 
+// BootstrapEndpoint is Firefox's recommended server. It is used to download
+// the server list through the tunnel when the list host is unreachable.
+var BootstrapEndpoint = Endpoint{Host: "p.m1.fastly-masque.net", Port: 2499, CountryCode: RecommendedCode}
+
 func FetchServerList() ([]Country, error) {
+	return FetchServerListWith(Client())
+}
+
+// FetchServerListWith downloads the list with a specific client, e.g. one
+// that tunnels through a VPN server.
+func FetchServerListWith(c *http.Client) ([]Country, error) {
 	req, _ := http.NewRequest("GET", serverListURL, nil)
 	applyHeaders(req.Header)
-	resp, err := Client().Do(req)
+	resp, err := c.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("could not download server list: %w", err)
 	}

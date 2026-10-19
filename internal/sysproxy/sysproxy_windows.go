@@ -22,14 +22,14 @@ const (
 	perConnProxyBypass   = 3
 	perConnAutoConfigURL = 4
 
-	proxyTypeDirect   = 0x1
-	proxyTypeProxy    = 0x2
-	proxyTypeAutoURL  = 0x4
+	proxyTypeDirect  = 0x1
+	proxyTypeProxy   = 0x2
+	proxyTypeAutoURL = 0x4
 )
 
 var (
-	wininet                = windows.NewLazySystemDLL("wininet.dll")
-	procInternetSetOption  = wininet.NewProc("InternetSetOptionW")
+	wininet                 = windows.NewLazySystemDLL("wininet.dll")
+	procInternetSetOption   = wininet.NewProc("InternetSetOptionW")
 	procInternetQueryOption = wininet.NewProc("InternetQueryOptionW")
 	procGlobalFree          = windows.NewLazySystemDLL("kernel32.dll").NewProc("GlobalFree")
 )

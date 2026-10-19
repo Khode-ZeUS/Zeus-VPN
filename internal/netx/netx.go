@@ -24,10 +24,19 @@ func SetControl(f ControlFunc) {
 	mu.Unlock()
 }
 
+// DialContext dials through the physical network. TCP connections apply
+// TLS ClientHello fragmentation according to SetSplitMode.
 func DialContext(ctx context.Context, network, address string) (net.Conn, error) {
 	mu.RLock()
 	c := control
 	mu.RUnlock()
 	d := net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second, Control: c}
-	return d.DialContext(ctx, network, address)
+	conn, err := d.DialContext(ctx, network, address)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := conn.(*net.TCPConn); ok {
+		return wrapSplit(conn), nil
+	}
+	return conn, nil
 }

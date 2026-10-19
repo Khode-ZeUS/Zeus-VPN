@@ -30,6 +30,10 @@ func (e *RefusedError) Error() string {
 	return fmt.Sprintf("upstream refused CONNECT with status %d", e.Status)
 }
 
+// RefreshFunc obtains a new proxy pass after the proxy rejected the current
+// one with the given HTTP status (expired pass, used-up quota, ...).
+type RefreshFunc func(ctx context.Context, status int) (string, error)
+
 type Upstream struct {
 	host  string
 	port  int
@@ -41,39 +45,69 @@ type Upstream struct {
 	conns     []*http2.ClientConn
 	closed    bool
 
+	refresh       RefreshFunc
+	refreshMu     sync.Mutex
+	lastRefreshAt time.Time
+
 	// Counters for every byte carried through the tunnel.
 	Up, Down atomic.Int64
 }
 
-// NewUpstream resolves the proxy host once up front: in TUN mode the system
-// resolver may itself depend on the tunnel, so reconnects dial the cached IPs.
-func NewUpstream(ctx context.Context, host string, port int, token string) (*Upstream, error) {
-	ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+// NewUpstream resolves the proxy host once up front (over DNS-over-HTTPS):
+// in TUN mode the system resolver may itself depend on the tunnel, so
+// reconnects dial the cached IPs.
+func NewUpstream(ctx context.Context, host string, port int, token string, refresh RefreshFunc) (*Upstream, error) {
+	ips, err := netx.LookupHost(ctx, host)
 	if err != nil {
 		return nil, fmt.Errorf("could not resolve %s: %w", host, err)
 	}
-	// Prefer IPv4: it is far more reliable on residential networks.
-	var v4, v6 []netip.Addr
-	for _, ip := range ips {
-		if ip.Unmap().Is4() {
-			v4 = append(v4, ip.Unmap())
-		} else {
-			v6 = append(v6, ip)
-		}
-	}
 	u := &Upstream{
-		host:  host,
-		port:  port,
-		addrs: append(v4, v6...),
+		host:    host,
+		port:    port,
+		addrs:   ips,
+		refresh: refresh,
 		transport: &http2.Transport{
-			ReadIdleTimeout:    30 * time.Second,
-			PingTimeout:        15 * time.Second,
+			ReadIdleTimeout:    25 * time.Second,
+			PingTimeout:        25 * time.Second,
 			WriteByteTimeout:   30 * time.Second,
 			DisableCompression: true,
 		},
 	}
 	u.token.Store(&token)
 	return u, nil
+}
+
+// sessionFatal are CONNECT statuses meaning the pass itself was refused, so
+// every new stream would fail until the pass is replaced.
+func sessionFatal(status int) bool {
+	switch status {
+	case 401, 402, 403, 407, 429:
+		return true
+	}
+	return false
+}
+
+// renewAfterRejection replaces the pass at most once every 15 seconds, so a
+// burst of rejected streams triggers a single renewal.
+func (u *Upstream) renewAfterRejection(ctx context.Context, status int, rejected string) bool {
+	if u.refresh == nil {
+		return false
+	}
+	u.refreshMu.Lock()
+	defer u.refreshMu.Unlock()
+	if *u.token.Load() != rejected {
+		return true // someone else already renewed it
+	}
+	if time.Since(u.lastRefreshAt) < 15*time.Second {
+		return false
+	}
+	u.lastRefreshAt = time.Now()
+	token, err := u.refresh(ctx, status)
+	if err != nil || token == "" {
+		return false
+	}
+	u.SetToken(token)
+	return true
 }
 
 func (u *Upstream) Host() string { return u.host }
@@ -93,21 +127,32 @@ func (u *Upstream) Warmup(ctx context.Context) error {
 	return nil
 }
 
+func (u *Upstream) handshake(ctx context.Context, ip netip.Addr) (*tls.Conn, error) {
+	dctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	raw, err := netx.DialContext(dctx, "tcp", net.JoinHostPort(ip.String(), strconv.Itoa(u.port)))
+	if err != nil {
+		return nil, err
+	}
+	tc := tls.Client(raw, &tls.Config{ServerName: u.host, NextProtos: []string{"h2"}, MinVersion: tls.VersionTLS12})
+	if err := tc.HandshakeContext(dctx); err != nil {
+		raw.Close()
+		return nil, err
+	}
+	return tc, nil
+}
+
 func (u *Upstream) newConn(ctx context.Context) (*http2.ClientConn, error) {
 	var lastErr error
 	for _, ip := range u.addrs {
-		dctx, cancel := context.WithTimeout(ctx, 8*time.Second)
-		raw, err := netx.DialContext(dctx, "tcp", net.JoinHostPort(ip.String(), strconv.Itoa(u.port)))
-		if err != nil {
-			cancel()
-			lastErr = err
-			continue
+		wasBlocked := netx.HostBlocked(u.host)
+		tc, err := u.handshake(ctx, ip)
+		if err != nil && !wasBlocked && netx.HostBlocked(u.host) && ctx.Err() == nil {
+			// The network cut off a plain handshake; retry with the server
+			// name fragmented.
+			tc, err = u.handshake(ctx, ip)
 		}
-		tc := tls.Client(raw, &tls.Config{ServerName: u.host, NextProtos: []string{"h2"}, MinVersion: tls.VersionTLS12})
-		err = tc.HandshakeContext(dctx)
-		cancel()
 		if err != nil {
-			raw.Close()
 			lastErr = err
 			continue
 		}
@@ -180,18 +225,20 @@ func (u *Upstream) discard(cc *http2.ClientConn) {
 // hostname rather than an IP lets the proxy resolve it, avoiding local DNS.
 func (u *Upstream) Dial(ctx context.Context, target string) (net.Conn, error) {
 	var lastErr error
-	for attempt := 0; attempt < 2; attempt++ {
+	renewed := false
+	for attempt := 0; attempt < 3; attempt++ {
 		cc, err := u.session(ctx)
 		if err != nil {
 			return nil, err
 		}
+		token := *u.token.Load()
 		pr, pw := io.Pipe()
 		req := &http.Request{
-			Method: "CONNECT",
-			URL:    &url.URL{Host: target},
-			Host:   target,
-			Header: http.Header{"Proxy-Authorization": {"Bearer " + *u.token.Load()}},
-			Body:   pr,
+			Method:        "CONNECT",
+			URL:           &url.URL{Host: target},
+			Host:          target,
+			Header:        http.Header{"Proxy-Authorization": {"Bearer " + token}},
+			Body:          pr,
 			ContentLength: -1,
 		}
 		req = req.WithContext(context.WithoutCancel(ctx))
@@ -229,7 +276,13 @@ func (u *Upstream) Dial(ctx context.Context, target string) (net.Conn, error) {
 		if res.resp.StatusCode < 200 || res.resp.StatusCode > 299 {
 			pw.Close()
 			res.resp.Body.Close()
-			return nil, &RefusedError{Status: res.resp.StatusCode}
+			status := res.resp.StatusCode
+			lastErr = &RefusedError{Status: status}
+			if !renewed && sessionFatal(status) && u.renewAfterRejection(ctx, status, token) {
+				renewed = true
+				continue
+			}
+			return nil, lastErr
 		}
 		return &streamConn{u: u, body: res.resp.Body, w: pw, target: target}, nil
 	}

@@ -10,6 +10,8 @@ let latency = {};
 let openCountry = null;
 let timerHandle = null;
 let lastStats = { up: 0, down: 0, upRate: 0, downRate: 0 };
+let addingAccount = false;
+let lastQuotaRefresh = 0;
 
 const GLOBE = '<svg viewBox="0 0 24 24"><path d="M12 2l2.4 5.6L20 8.3l-4.3 4 1.2 6L12 15.4 7.1 18.3l1.2-6L4 8.3l5.6-.7Z"/></svg>';
 const CHEVRON = '<svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>';
@@ -63,12 +65,12 @@ function errText(e) {
   return String(e && e.message ? e.message : e).replace(/^Error:\s*/, "");
 }
 let toastTimer;
-function toast(msg) {
+function toast(msg, ms = 3200) {
   const t = $("#toast");
   t.textContent = msg;
   t.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (t.hidden = true), 3200);
+  toastTimer = setTimeout(() => (t.hidden = true), ms);
 }
 function setLoading(btn, on) {
   btn.disabled = on;
@@ -98,9 +100,48 @@ function locationName() {
   return { code: cc, name: c ? c.name : cc, sub: city ? city.name : "Any city" };
 }
 
+function fmtDate(ms) {
+  return ms ? new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
+}
+
+function renderAccounts() {
+  const list = $("#account-list");
+  const html = (snap.accounts || []).map((a) => {
+    const initial = (a.email || "Z")[0].toUpperCase();
+    let line, cls = "", pct = 0;
+    if (a.needsLogin) {
+      line = "Sign-in expired · remove and add it again";
+      cls = "bad";
+    } else if (a.exhausted) {
+      line = "Out of data" + (a.quotaReset ? ` · resets ${fmtDate(a.quotaReset)}` : "");
+      cls = "warn";
+      pct = 100;
+    } else if (a.quotaLimit > 0) {
+      line = `${fmtBytes(a.quotaLeft)} left of ${fmtBytes(a.quotaLimit)}` + (a.quotaReset ? ` · resets ${fmtDate(a.quotaReset)}` : "");
+      pct = Math.min(100, ((a.quotaLimit - a.quotaLeft) / a.quotaLimit) * 100);
+    } else {
+      line = "Checking data…";
+    }
+    const action = a.active
+      ? '<span class="acct-badge">Active</span>'
+      : `<button class="acct-use" data-use="${esc(a.email)}">Use</button>`;
+    return `<div class="acct ${a.active ? "active" : ""}">
+      <span class="avatar">${esc(initial)}</span>
+      <span class="acct-body"><b>${esc(a.email || "Mozilla account")}</b><small class="${cls}">${esc(line)}</small>
+        ${a.quotaLimit > 0 ? `<span class="mini-bar"><i style="width:${pct.toFixed(1)}%"></i></span>` : ""}</span>
+      ${action}
+      <button class="icon-btn" data-remove="${esc(a.email)}" title="Sign out of this account"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>`;
+  });
+  list.innerHTML = html.join("");
+}
+
 function render() {
   if (!snap) return;
-  if (!snap.loggedIn) {
+  renderAccounts();
+  if (!snap.loggedIn || addingAccount) {
+    $("#login-cancel").hidden = !snap.loggedIn;
+    $("#login-subtitle").textContent = snap.loggedIn ? "Add another Mozilla account" : "Sign in with your Mozilla account";
     if ($("#view-verify").hidden) showView("view-login");
     return;
   }
@@ -108,12 +149,13 @@ function render() {
   const st = snap.status;
   document.body.classList.toggle("connected", st === "connected");
 
+  const accounts = snap.accounts || [];
   const email = snap.email || "Mozilla account";
   $("#account-email").textContent = email;
-  $("#account-email2").textContent = email;
-  const initial = (snap.email || "Z")[0].toUpperCase();
-  $("#avatar").textContent = initial;
-  $("#avatar2").textContent = initial;
+  $("#avatar").textContent = (snap.email || "Z")[0].toUpperCase();
+  const count = $("#acct-count");
+  count.hidden = accounts.length < 2;
+  count.textContent = "+" + (accounts.length - 1);
 
   const mode = snap.settings.mode;
   $("#mode-switch").classList.toggle("tun", mode === "tun");
@@ -158,10 +200,23 @@ function render() {
   lp.hidden = ping == null;
 
   $("#exit-ip").textContent = st === "connected" ? (snap.exitIp ? `${snap.exitIp}` : "checking…") : "—";
-  if (snap.quotaLimit > 0) {
-    const used = snap.quotaLimit - snap.quotaLeft;
-    $("#quota-text").textContent = `${fmtBytes(snap.quotaLeft)} left of ${fmtBytes(snap.quotaLimit)}`;
-    $("#quota-fill").style.width = Math.min(100, (used / snap.quotaLimit) * 100).toFixed(1) + "%";
+  // Quota of the active account (live while connected, last known otherwise).
+  const active = accounts.find((a) => a.active) || {};
+  const limit = snap.quotaLimit || active.quotaLimit || 0;
+  const left = snap.quotaLimit ? snap.quotaLeft : active.quotaLeft || 0;
+  if (limit > 0) {
+    $("#quota-text").textContent = `${fmtBytes(left)} left of ${fmtBytes(limit)}`;
+    $("#quota-fill").style.width = Math.min(100, ((limit - left) / limit) * 100).toFixed(1) + "%";
+  } else {
+    $("#quota-text").textContent = "—";
+    $("#quota-fill").style.width = "0";
+  }
+  const known = accounts.filter((a) => a.quotaLimit > 0);
+  $("#total-row").hidden = accounts.length < 2 || !known.length;
+  if (known.length) {
+    const totalLeft = known.reduce((s, a) => s + (a.exhausted ? 0 : a.quotaLeft), 0);
+    const totalLimit = known.reduce((s, a) => s + a.quotaLimit, 0);
+    $("#total-text").textContent = `${fmtBytes(totalLeft)} left of ${fmtBytes(totalLimit)}`;
   }
 
   const banner = $("#banner");
@@ -181,6 +236,8 @@ function render() {
   $("#set-bypass-ir").checked = snap.settings.bypass_iran;
   $("#set-bypass-lan").checked = snap.settings.bypass_lan;
   $("#set-autoconnect").checked = snap.settings.auto_connect;
+  $("#set-autoswitch").checked = snap.settings.auto_switch;
+  $("#set-tls-split").value = snap.settings.tls_split || "auto";
   $("#set-autostart").checked = snap.autostart;
   if (document.activeElement !== $("#set-port")) $("#set-port").value = snap.settings.proxy_port;
   $("#about").innerHTML = `Zeus VPN ${esc(snap.version)} · local proxy ${esc(snap.proxyAddr || "127.0.0.1:" + snap.settings.proxy_port)}<br>Powered by Mozilla VPN · <a href="#" id="link-github">GitHub</a>`;
@@ -308,10 +365,18 @@ function showVerify(step) {
 
 async function handleStep(step) {
   if (step.step === "done") {
+    const added = addingAccount;
+    addingAccount = false;
     $("#view-verify").hidden = true;
     $("#login-password").value = "";
+    $("#login-email").value = "";
     await refreshSnapshot();
-    loadServers(false);
+    if (added) {
+      openSheet("sheet-settings");
+      toast("Account added");
+    } else {
+      loadServers(false);
+    }
   } else {
     showVerify(step);
   }
@@ -360,6 +425,13 @@ function wire() {
     }
   };
   $("#verify-back").onclick = () => showView("view-login");
+  $("#login-cancel").onclick = () => {
+    addingAccount = false;
+    api().CancelLogin();
+    $("#login-error").textContent = "";
+    render();
+    openSheet("sheet-settings");
+  };
 
   $("#orb").onclick = toggleConnection;
   for (const b of $$("#mode-switch button")) {
@@ -405,8 +477,16 @@ function wire() {
     }
   };
 
-  $("#btn-settings").onclick = () => openSheet("sheet-settings");
-  $("#btn-account").onclick = () => openSheet("sheet-settings");
+  const openSettings = () => {
+    openSheet("sheet-settings");
+    const now = Date.now();
+    if (now - lastQuotaRefresh > 60000) {
+      lastQuotaRefresh = now;
+      api().RefreshQuotas();
+    }
+  };
+  $("#btn-settings").onclick = openSettings;
+  $("#btn-account").onclick = openSettings;
   $("#scrim").onclick = closeSheets;
   for (const b of $$("[data-close]")) b.onclick = closeSheets;
 
@@ -415,6 +495,8 @@ function wire() {
     s.bypass_iran = $("#set-bypass-ir").checked;
     s.bypass_lan = $("#set-bypass-lan").checked;
     s.auto_connect = $("#set-autoconnect").checked;
+    s.auto_switch = $("#set-autoswitch").checked;
+    s.tls_split = $("#set-tls-split").value;
     s.proxy_port = parseInt($("#set-port").value, 10) || s.proxy_port;
     try {
       await api().SaveSettings(s);
@@ -424,7 +506,7 @@ function wire() {
       render();
     }
   };
-  for (const id of ["#set-bypass-ir", "#set-bypass-lan", "#set-autoconnect"]) $(id).onchange = saveSettings;
+  for (const id of ["#set-bypass-ir", "#set-bypass-lan", "#set-autoconnect", "#set-autoswitch", "#set-tls-split"]) $(id).onchange = saveSettings;
   $("#set-port").onchange = saveSettings;
   $("#set-autostart").onchange = async (e) => {
     try {
@@ -435,13 +517,36 @@ function wire() {
     refreshSnapshot();
   };
 
-  $("#btn-logout").onclick = async () => {
+  $("#btn-add-account").onclick = () => {
+    addingAccount = true;
     closeSheets();
-    await api().Logout();
-    servers = [];
-    latency = {};
-    showView("view-login");
+    $("#login-error").textContent = "";
+    render();
+    setTimeout(() => $("#login-email").focus(), 50);
   };
+  $("#account-list").onclick = async (e) => {
+    const use = e.target.closest("[data-use]");
+    const rm = e.target.closest("[data-remove]");
+    try {
+      if (use) {
+        await api().UseAccount(use.dataset.use);
+        toast("Now using " + use.dataset.use);
+      } else if (rm) {
+        const email = rm.dataset.remove;
+        if (!confirm(`Sign out of ${email || "this account"}?`)) return;
+        await api().RemoveAccount(email);
+        await refreshSnapshot();
+        if (!snap.loggedIn) {
+          closeSheets();
+          servers = [];
+          latency = {};
+        }
+      }
+    } catch (err) {
+      toast(errText(err));
+    }
+  };
+  $("#btn-logfile").onclick = () => api().OpenLogFile();
 
   $("#btn-logs").onclick = async () => {
     const lines = await api().GetLogs();
@@ -483,6 +588,7 @@ async function init() {
   wire();
   window.runtime.EventsOn("state", (s) => { snap = s; render(); });
   window.runtime.EventsOn("stats", (s) => { lastStats = s; renderStats(); });
+  window.runtime.EventsOn("notice", (msg) => toast(msg, 6000));
   window.runtime.EventsOn("log", (line) => {
     if (!$("#sheet-logs").hidden) {
       const box = $("#logs");

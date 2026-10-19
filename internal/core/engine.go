@@ -9,6 +9,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -49,6 +51,8 @@ type State struct {
 	QuotaLimit  int64       `json:"quotaLimit"`
 	QuotaLeft   int64       `json:"quotaLeft"`
 	ProxyAddr   string      `json:"proxyAddr"`
+	// Account is the email whose proxy pass the connection is using.
+	Account string `json:"account"`
 }
 
 type Engine struct {
@@ -67,21 +71,42 @@ type Engine struct {
 	cancel  context.CancelFunc
 	done    chan struct{}
 
+	passMu      sync.Mutex
 	passExpires time.Time
+	renewKick   chan struct{}
 
-	OnState func(State)
-	OnLog   func(string)
+	OnState  func(State)
+	OnLog    func(string)
+	OnNotice func(string)
 
-	logMu sync.Mutex
-	logs  []string
+	logMu   sync.Mutex
+	logs    []string
+	logFile *os.File
 }
+
+const maxLogFile = 2 << 20
 
 func NewEngine() *Engine {
 	// Undo a system proxy left behind by a crash or power loss.
 	sysproxy.Restore()
-	e := &Engine{Auth: NewAuth(), settings: store.LoadSettings()}
-	e.state = State{Status: StatusDisconnected, Mode: e.settings.Mode}
+	e := &Engine{Auth: NewAuth(), settings: store.LoadSettings(), renewKick: make(chan struct{}, 1)}
+	netx.SetSplitMode(e.settings.TLSSplit)
+	e.state = State{Status: StatusDisconnected, Mode: e.settings.Mode, Account: e.Auth.ActiveEmail()}
+	e.openLogFile()
 	return e
+}
+
+// LogPath is the persistent log, kept for troubleshooting.
+func LogPath() string { return filepath.Join(store.Dir(), "zeusvpn.log") }
+
+func (e *Engine) openLogFile() {
+	p := LogPath()
+	if fi, err := os.Stat(p); err == nil && fi.Size() > maxLogFile {
+		os.Rename(p, p+".old")
+	}
+	if f, err := os.OpenFile(p, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
+		e.logFile = f
+	}
 }
 
 func (e *Engine) Log(level, msg string) {
@@ -91,9 +116,19 @@ func (e *Engine) Log(level, msg string) {
 	if len(e.logs) > 500 {
 		e.logs = e.logs[len(e.logs)-500:]
 	}
+	if e.logFile != nil {
+		e.logFile.WriteString(line + "\r\n")
+	}
 	e.logMu.Unlock()
 	if e.OnLog != nil {
 		e.OnLog(line)
+	}
+}
+
+// notify shows a short message to the user (e.g. an account switch).
+func (e *Engine) notify(msg string) {
+	if e.OnNotice != nil {
+		e.OnNotice(msg)
 	}
 }
 
@@ -134,6 +169,7 @@ func (e *Engine) SaveSettings(s store.Settings) error {
 	e.mu.Lock()
 	e.settings = s
 	e.mu.Unlock()
+	netx.SetSplitMode(s.TLSSplit)
 	e.update(func(st *State) {
 		if st.Status == StatusDisconnected {
 			st.Mode = s.Mode
@@ -244,7 +280,9 @@ func (e *Engine) Connect() {
 			if ctx.Err() != nil {
 				msg = ""
 			}
-			e.update(func(s *State) { *s = State{Status: StatusDisconnected, Mode: settings.Mode, Error: msg} })
+			e.update(func(s *State) {
+				*s = State{Status: StatusDisconnected, Mode: settings.Mode, Error: msg, Account: e.Auth.ActiveEmail()}
+			})
 			close(e.done)
 			return
 		}
@@ -257,22 +295,16 @@ func (e *Engine) connect(ctx context.Context, st store.Settings) error {
 	if st.Mode == store.ModeTUN && !IsElevated() {
 		return errors.New("full VPN mode needs administrator rights")
 	}
-	token, err := e.Auth.AccessToken()
+	if !e.Auth.LoggedIn() {
+		return ErrNotLoggedIn
+	}
+	e.Log("info", fmt.Sprintf("requesting proxy pass from Mozilla (TLS fragmentation: %s)", netx.SplitMode()))
+	pass, email, err := e.acquirePass(st.AutoSwitch)
 	if err != nil {
 		return err
 	}
-	e.Log("info", "requesting proxy pass from Mozilla")
-	pass, err := mozilla.AcquireProxyPass(token)
-	if err != nil {
-		if errors.Is(err, mozilla.ErrQuotaExceeded) {
-			return errors.New("your monthly Mozilla VPN data quota is used up")
-		}
-		return err
-	}
-	e.mu.Lock()
-	e.passExpires = pass.Expires
-	e.mu.Unlock()
-	e.update(func(s *State) { s.QuotaLimit, s.QuotaLeft = pass.QuotaLimit, pass.QuotaLeft })
+	e.Log("info", fmt.Sprintf("using account %s (%s left)", email, quotaText(pass.QuotaLeft)))
+	e.applyPass(pass, email)
 
 	countries, err := e.Servers(false)
 	if err != nil {
@@ -295,7 +327,7 @@ func (e *Engine) connect(ctx context.Context, st store.Settings) error {
 		mozilla.ResetConnections()
 	}
 
-	up, err := tunnel.NewUpstream(ctx, ep.Host, ep.Port, pass.Token)
+	up, err := tunnel.NewUpstream(ctx, ep.Host, ep.Port, pass.Token, e.onRejected)
 	if err != nil {
 		return err
 	}
@@ -370,43 +402,6 @@ func (e *Engine) routes(up *tunnel.Upstream, st store.Settings) (tunnel.DialFunc
 		return up.RoundTrip(r)
 	}
 	return dial, forward
-}
-
-func (e *Engine) renewLoop(ctx context.Context) {
-	defer close(e.done)
-	e.mu.Lock()
-	expires := e.passExpires
-	e.mu.Unlock()
-	for {
-		wait := time.Until(expires) - 2*time.Minute
-		if wait < 30*time.Second {
-			wait = 30 * time.Second
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(wait):
-		}
-		token, err := e.Auth.AccessToken()
-		var pass *mozilla.ProxyPass
-		if err == nil {
-			pass, err = mozilla.AcquireProxyPass(token)
-		}
-		if err != nil {
-			e.Log("warning", "proxy pass renewal failed, retrying: "+err.Error())
-			expires = time.Now().Add(2*time.Minute + 30*time.Second)
-			continue
-		}
-		e.mu.Lock()
-		up := e.up
-		e.mu.Unlock()
-		if up != nil {
-			up.SetToken(pass.Token)
-		}
-		expires = pass.Expires
-		e.update(func(s *State) { s.QuotaLimit, s.QuotaLeft = pass.QuotaLimit, pass.QuotaLeft })
-		e.Log("info", "proxy pass renewed, valid until "+pass.Expires.Local().Format("15:04"))
-	}
 }
 
 func (e *Engine) verifyExit(ctx context.Context) {
@@ -506,5 +501,5 @@ func (e *Engine) Disconnect() {
 	}
 	e.Log("info", "disconnected")
 	mode := e.Settings().Mode
-	e.update(func(s *State) { *s = State{Status: StatusDisconnected, Mode: mode} })
+	e.update(func(s *State) { *s = State{Status: StatusDisconnected, Mode: mode, Account: e.Auth.ActiveEmail()} })
 }

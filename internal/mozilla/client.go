@@ -3,14 +3,17 @@
 package mozilla
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"zeusvpn/internal/netx"
@@ -43,9 +46,55 @@ func Client() *http.Client {
 			MaxIdleConnsPerHost: 4,
 		}
 		jar, _ := cookiejar.New(&cookiejar.Options{PublicSuffixList: publicsuffix.List})
-		httpClient = &http.Client{Transport: retryOnBlock{transport}, Jar: jar, Timeout: 30 * time.Second}
+		rt := viaTunnel{direct: retryOnBlock{transport}, tunnel: func() http.RoundTripper {
+			if t := tunnelTransport.Load(); t != nil {
+				return t
+			}
+			return nil
+		}}
+		httpClient = &http.Client{Transport: rt, Jar: jar, Timeout: 30 * time.Second}
 	})
 	return httpClient
+}
+
+// tunnelTransport reaches Mozilla's endpoints through the VPN itself; set
+// while connected.
+var tunnelTransport atomic.Pointer[http.Transport]
+
+// SetTunnel lets control-plane requests fall back to the VPN tunnel when the
+// direct path fails (Mozilla's API hosts are intermittently filtered). Pass
+// nil to stop.
+func SetTunnel(dial func(ctx context.Context, addr string) (net.Conn, error)) {
+	var t *http.Transport
+	if dial != nil {
+		t = &http.Transport{
+			Proxy:               nil,
+			DialContext:         func(ctx context.Context, _, addr string) (net.Conn, error) { return dial(ctx, addr) },
+			ForceAttemptHTTP2:   true,
+			TLSHandshakeTimeout: 15 * time.Second,
+			IdleConnTimeout:     60 * time.Second,
+		}
+	}
+	if old := tunnelTransport.Swap(t); old != nil {
+		old.CloseIdleConnections()
+	}
+}
+
+// replayable returns a copy of req that can be sent again, if its body allows.
+func replayable(req *http.Request) (*http.Request, bool) {
+	if req.Body == nil || req.Body == http.NoBody {
+		return req, true
+	}
+	if req.GetBody == nil {
+		return nil, false
+	}
+	body, err := req.GetBody()
+	if err != nil {
+		return nil, false
+	}
+	r := req.Clone(req.Context())
+	r.Body = body
+	return r, true
 }
 
 // retryOnBlock repeats a request once when the network cut off its TLS
@@ -60,18 +109,34 @@ func (r retryOnBlock) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err == nil || wasBlocked || !netx.HostBlocked(host) || req.Context().Err() != nil {
 		return resp, err
 	}
-	if req.Body != nil && req.Body != http.NoBody {
-		if req.GetBody == nil {
-			return resp, err
-		}
-		body, gerr := req.GetBody()
-		if gerr != nil {
-			return resp, err
-		}
-		req = req.Clone(req.Context())
-		req.Body = body
+	again, ok := replayable(req)
+	if !ok {
+		return resp, err
 	}
-	return r.rt.RoundTrip(req)
+	return r.rt.RoundTrip(again)
+}
+
+// viaTunnel sends a request that failed on the direct path (timeout, reset)
+// once more through the VPN tunnel, when one is available.
+type viaTunnel struct {
+	direct http.RoundTripper
+	tunnel func() http.RoundTripper
+}
+
+func (v viaTunnel) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := v.direct.RoundTrip(req)
+	if err == nil || req.Context().Err() != nil {
+		return resp, err
+	}
+	t := v.tunnel()
+	if t == nil {
+		return resp, err
+	}
+	again, ok := replayable(req)
+	if !ok {
+		return resp, err
+	}
+	return t.RoundTrip(again)
 }
 
 // ResetConnections drops pooled connections, e.g. after the outbound

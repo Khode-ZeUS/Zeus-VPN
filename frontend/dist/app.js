@@ -148,6 +148,7 @@ function render() {
   showView("view-home");
   const st = snap.status;
   document.body.classList.toggle("connected", st === "connected");
+  document.body.classList.toggle("reconnecting", st === "reconnecting");
 
   const accounts = snap.accounts || [];
   const email = snap.email || "Mozilla account";
@@ -168,6 +169,7 @@ function render() {
     connecting: ["Connecting…", "Securing your connection"],
     connected: ["Connected", ""],
     disconnecting: ["Disconnecting…", ""],
+    reconnecting: ["Reconnecting…", snap.settings.kill_switch ? "Kill switch is blocking the internet" : "Connection lost, retrying"],
   };
   $("#status-text").textContent = texts[st][0];
   clearInterval(timerHandle);
@@ -220,7 +222,12 @@ function render() {
   }
 
   const banner = $("#banner");
-  if (snap.error) {
+  if (st === "reconnecting" && snap.settings.kill_switch) {
+    banner.className = "banner info";
+    banner.innerHTML = 'Kill switch is blocking the internet until the VPN reconnects.<button id="banner-disconnect">Disconnect</button>';
+    banner.hidden = false;
+    $("#banner-disconnect").onclick = () => api().Disconnect();
+  } else if (snap.error) {
     banner.className = "banner";
     banner.textContent = snap.error;
     banner.hidden = false;
@@ -237,6 +244,7 @@ function render() {
   $("#set-bypass-lan").checked = snap.settings.bypass_lan;
   $("#set-autoconnect").checked = snap.settings.auto_connect;
   $("#set-autoswitch").checked = snap.settings.auto_switch;
+  $("#set-killswitch").checked = snap.settings.kill_switch;
   $("#set-tls-split").value = snap.settings.tls_split || "auto";
   $("#set-autostart").checked = snap.autostart;
   if (document.activeElement !== $("#set-port")) $("#set-port").value = snap.settings.proxy_port;
@@ -336,9 +344,20 @@ async function toggleConnection() {
       await api().Disconnect();
     }
   } catch (e) {
-    if (errText(e) === "ELEVATION_REQUIRED") $("#modal-admin").hidden = false;
-    else toast(errText(e));
+    const msg = errText(e);
+    if (msg.startsWith("ELEVATION_REQUIRED")) showAdminModal(msg.endsWith("killswitch") ? "killswitch" : "tun");
+    else toast(msg);
   }
+}
+
+let adminReason = "tun";
+function showAdminModal(reason) {
+  adminReason = reason;
+  $("#admin-reason").textContent = reason === "killswitch"
+    ? "The kill switch uses the Windows firewall to block traffic when the VPN drops. Windows requires administrator permission for that."
+    : "Full VPN mode creates a virtual network adapter so every app is protected. Windows requires administrator permission for that.";
+  $("#btn-use-proxy").textContent = reason === "killswitch" ? "Turn off kill switch and connect" : "Use System Proxy instead";
+  $("#modal-admin").hidden = false;
 }
 
 async function elevate() {
@@ -440,7 +459,7 @@ function wire() {
       if (m === snap.settings.mode) return;
       try {
         await api().SetMode(m);
-        if (m === "tun" && !snap.elevated && snap.status === "connected") $("#modal-admin").hidden = false;
+        if (m === "tun" && !snap.elevated && snap.status === "connected") showAdminModal("tun");
       } catch (e) {
         toast(errText(e));
       }
@@ -496,6 +515,7 @@ function wire() {
     s.bypass_lan = $("#set-bypass-lan").checked;
     s.auto_connect = $("#set-autoconnect").checked;
     s.auto_switch = $("#set-autoswitch").checked;
+    s.kill_switch = $("#set-killswitch").checked;
     s.tls_split = $("#set-tls-split").value;
     s.proxy_port = parseInt($("#set-port").value, 10) || s.proxy_port;
     try {
@@ -506,7 +526,7 @@ function wire() {
       render();
     }
   };
-  for (const id of ["#set-bypass-ir", "#set-bypass-lan", "#set-autoconnect", "#set-autoswitch", "#set-tls-split"]) $(id).onchange = saveSettings;
+  for (const id of ["#set-bypass-ir", "#set-bypass-lan", "#set-autoconnect", "#set-autoswitch", "#set-tls-split", "#set-killswitch"]) $(id).onchange = saveSettings;
   $("#set-port").onchange = saveSettings;
   $("#set-autostart").onchange = async (e) => {
     try {
@@ -563,7 +583,13 @@ function wire() {
   $("#btn-elevate").onclick = elevate;
   $("#btn-use-proxy").onclick = async () => {
     $("#modal-admin").hidden = true;
-    await api().SetMode("proxy");
+    if (adminReason === "killswitch") {
+      await api().SaveSettings({ ...snap.settings, kill_switch: false });
+      await refreshSnapshot();
+      toggleConnection();
+    } else {
+      await api().SetMode("proxy");
+    }
   };
   $("#modal-admin").onclick = (e) => { if (e.target.id === "modal-admin") $("#modal-admin").hidden = true; };
 

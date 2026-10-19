@@ -167,7 +167,7 @@ func (a *App) RemoveAccount(email string) error {
 	a.eng.Auth.Remove(email)
 	if !a.eng.Auth.LoggedIn() {
 		a.eng.Disconnect()
-	} else if wasActive && a.eng.State().Status == core.StatusConnected {
+	} else if st := a.eng.State().Status; wasActive && (st == core.StatusConnected || st == core.StatusReconnecting) {
 		if err := a.eng.UseAccount(a.eng.Auth.ActiveEmail()); err != nil {
 			a.eng.Disconnect()
 		}
@@ -220,7 +220,7 @@ func (a *App) GetLatency() map[string]int { return a.eng.Latency() }
 
 // reconnectIfActive applies a changed setting to a live connection.
 func (a *App) reconnectIfActive() {
-	if a.eng.State().Status == core.StatusConnected {
+	if st := a.eng.State().Status; st == core.StatusConnected || st == core.StatusReconnecting {
 		go func() {
 			a.eng.Disconnect()
 			a.Connect()
@@ -265,6 +265,10 @@ func (a *App) SaveSettings(s store.Settings) error {
 		return errors.New("port must be between 1024 and 65535")
 	}
 	changed := s.ProxyPort != cur.ProxyPort || s.BypassIran != cur.BypassIran || s.BypassLAN != cur.BypassLAN || s.TLSSplit != cur.TLSSplit
+	if s.KillSwitch && !cur.KillSwitch && !core.IsElevated() {
+		// Saved anyway; the next connect offers to restart as administrator.
+		defer runtime.EventsEmit(a.ctx, "notice", "The kill switch needs administrator rights. Zeus VPN will ask to restart as administrator when you connect.")
+	}
 	if err := a.eng.SaveSettings(s); err != nil {
 		return err
 	}
@@ -276,14 +280,24 @@ func (a *App) SaveSettings(s store.Settings) error {
 
 func (a *App) SetAutostart(on bool) error { return setAutostart(on) }
 
-var ErrElevation = errors.New("ELEVATION_REQUIRED")
+// Elevation errors tell the UI which feature needs administrator rights.
+var (
+	ErrElevationTUN        = errors.New("ELEVATION_REQUIRED:tun")
+	ErrElevationKillSwitch = errors.New("ELEVATION_REQUIRED:killswitch")
+)
 
 func (a *App) Connect() error {
 	if !a.eng.Auth.LoggedIn() {
 		return core.ErrNotLoggedIn
 	}
-	if a.eng.Settings().Mode == store.ModeTUN && !core.IsElevated() {
-		return ErrElevation
+	if !core.IsElevated() {
+		s := a.eng.Settings()
+		if s.Mode == store.ModeTUN {
+			return ErrElevationTUN
+		}
+		if s.KillSwitch {
+			return ErrElevationKillSwitch
+		}
 	}
 	a.eng.Connect()
 	return nil

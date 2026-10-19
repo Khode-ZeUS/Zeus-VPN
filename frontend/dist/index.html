@@ -141,6 +141,8 @@
       <div class="accounts" id="account-list"></div>
       <button class="btn ghost" id="btn-add-account"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add another account</button>
       <label class="toggle-row"><span><b>Auto-switch accounts</b><small>Use the next account when one runs out of data</small></span><input type="checkbox" id="set-autoswitch"><i></i></label>
+      <div class="group-label">Protection</div>
+      <label class="toggle-row"><span><b>Kill switch</b><small>If the VPN drops, block the internet until it reconnects or you disconnect. Needs administrator.</small></span><input type="checkbox" id="set-killswitch"><i></i></label>
       <div class="group-label">Routing</div>
       <label class="toggle-row"><span><b>Bypass Iranian sites</b><small>.ir domains connect directly</small></span><input type="checkbox" id="set-bypass-ir"><i></i></label>
       <label class="toggle-row"><span><b>Bypass local network</b><small>Printers, routers and LAN stay direct</small></span><input type="checkbox" id="set-bypass-lan"><i></i></label>
@@ -179,7 +181,7 @@
     <div class="modal-card">
       <div class="modal-icon"><svg viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6Z"/><path d="M12 8v5M12 16h.01"/></svg></div>
       <h3>Administrator needed</h3>
-      <p class="muted">Full VPN mode creates a virtual network adapter so every app is protected. Windows requires administrator permission for that.</p>
+      <p class="muted" id="admin-reason">Full VPN mode creates a virtual network adapter so every app is protected. Windows requires administrator permission for that.</p>
       <button class="btn primary" id="btn-elevate">Restart as administrator</button>
       <button class="btn ghost" id="btn-use-proxy">Use System Proxy instead</button>
     </div>

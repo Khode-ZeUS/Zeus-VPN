@@ -354,6 +354,17 @@ func (e *Engine) connect(ctx context.Context, st store.Settings) error {
 	}
 	e.Log("info", fmt.Sprintf("requesting proxy pass from Mozilla (TLS fragmentation: %s)", netx.SplitMode()))
 	pass, email, err := e.acquirePass(st.AutoSwitch)
+	// Mozilla's API hosts are intermittently unreachable; retry briefly
+	// before giving up on network errors.
+	for attempt := 1; err != nil && attempt < 3 && !switchable(err) && !errors.Is(err, ErrNotLoggedIn) && ctx.Err() == nil; attempt++ {
+		e.Log("warning", "could not get a proxy pass, retrying: "+err.Error())
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(attempt) * 3 * time.Second):
+		}
+		pass, email, err = e.acquirePass(st.AutoSwitch)
+	}
 	if err != nil {
 		return err
 	}
@@ -391,6 +402,8 @@ func (e *Engine) connect(ctx context.Context, st store.Settings) error {
 	if err := up.Warmup(ctx); err != nil {
 		return err
 	}
+	// From now on Mozilla's API can also be reached through the tunnel.
+	mozilla.SetTunnel(up.Dial)
 	e.Log("info", "upstream transport=http2")
 
 	dial, forward := e.routes(up, st)
@@ -524,6 +537,7 @@ func (e *Engine) teardown() {
 	v, mixed, up, b := e.vpn, e.mixed, e.up, e.binding
 	e.vpn, e.mixed, e.up, e.binding = nil, nil, nil, nil
 	e.mu.Unlock()
+	mozilla.SetTunnel(nil)
 	if v != nil {
 		v.Close()
 	}

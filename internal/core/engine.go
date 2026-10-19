@@ -186,6 +186,34 @@ func (e *Engine) SaveSettings(s store.Settings) error {
 	return store.SaveSettings(s)
 }
 
+// fetchServersViaTunnel downloads the server list through Firefox's
+// recommended server, for networks that block the list host.
+func (e *Engine) fetchServersViaTunnel() ([]mozilla.Country, error) {
+	pass, err := e.passFor(e.Auth.ActiveEmail())
+	if err != nil {
+		return nil, fmt.Errorf("could not download the server list: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	ep := mozilla.BootstrapEndpoint
+	up, err := tunnel.NewUpstream(ctx, ep.Host, ep.Port, pass.Token, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer up.Close()
+	tr := &http.Transport{
+		Proxy:             nil,
+		DialContext:       func(ctx context.Context, _, addr string) (net.Conn, error) { return up.Dial(ctx, addr) },
+		ForceAttemptHTTP2: true,
+	}
+	defer tr.CloseIdleConnections()
+	list, err := mozilla.FetchServerListWith(&http.Client{Transport: tr, Timeout: 30 * time.Second})
+	if err != nil {
+		return nil, fmt.Errorf("could not download the server list: %w", err)
+	}
+	return list, nil
+}
+
 func IsElevated() bool {
 	return windows.GetCurrentProcessToken().IsElevated()
 }
@@ -207,8 +235,22 @@ func (e *Engine) Servers(force bool) ([]mozilla.Country, error) {
 		if len(s) > 0 {
 			return s, nil
 		}
-		return nil, err
+		// Mozilla's list server may be unreachable; the last saved copy
+		// is good enough to connect.
+		var cached []mozilla.Country
+		if store.LoadJSON("servers.json", &cached) && len(cached) > 0 {
+			e.Log("warning", "using the saved server list: "+err.Error())
+			e.mu.Lock()
+			e.servers = cached
+			e.mu.Unlock()
+			return cached, nil
+		}
+		e.Log("warning", "server list host unreachable, downloading it through the VPN: "+err.Error())
+		if list, err = e.fetchServersViaTunnel(); err != nil {
+			return nil, err
+		}
 	}
+	store.SaveJSON("servers.json", list)
 	e.mu.Lock()
 	e.servers, e.serversAt = list, time.Now()
 	e.mu.Unlock()

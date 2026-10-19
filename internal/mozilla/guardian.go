@@ -13,10 +13,10 @@ import (
 type ProxyPass struct {
 	Token string
 	// Expires is the pass expiry corrected for any server clock offset.
-	Expires     time.Time
-	QuotaLimit  int64
-	QuotaLeft   int64
-	QuotaReset  string
+	Expires    time.Time
+	QuotaLimit int64
+	QuotaLeft  int64
+	QuotaReset string
 }
 
 type Entitlement struct {
@@ -100,19 +100,6 @@ func ActivateGuardian(accessToken string) error {
 		return &HTTPError{resp.StatusCode, fmt.Sprintf("activation failed: HTTP %d: %s", resp.StatusCode, errorSnippet(body))}
 	}
 	return nil
-}
-
-// AcquireProxyPass fetches a pass, activating the entitlement once if the
-// account has never used the service.
-func AcquireProxyPass(accessToken string) (*ProxyPass, error) {
-	pass, err := FetchProxyPass(accessToken)
-	if err == ErrTokenInvalid {
-		if aerr := ActivateGuardian(accessToken); aerr != nil {
-			return nil, fmt.Errorf("%v (%v)", err, aerr)
-		}
-		pass, err = FetchProxyPass(accessToken)
-	}
-	return pass, err
 }
 
 func jwtTimes(token string) (exp, nbf time.Time, err error) {

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"os/exec"
 	"sort"
 	"time"
 
@@ -29,12 +30,13 @@ func NewApp(autoConnect, minimized bool) *App {
 
 type Snapshot struct {
 	core.State
-	LoggedIn  bool           `json:"loggedIn"`
-	Email     string         `json:"email"`
-	Settings  store.Settings `json:"settings"`
-	Elevated  bool           `json:"elevated"`
-	Autostart bool           `json:"autostart"`
-	Version   string         `json:"version"`
+	LoggedIn  bool               `json:"loggedIn"`
+	Email     string             `json:"email"`
+	Accounts  []core.AccountInfo `json:"accounts"`
+	Settings  store.Settings     `json:"settings"`
+	Elevated  bool               `json:"elevated"`
+	Autostart bool               `json:"autostart"`
+	Version   string             `json:"version"`
 }
 
 type Stats struct {
@@ -60,9 +62,13 @@ func (a *App) startup(ctx context.Context) {
 	a.eng = core.NewEngine()
 	a.eng.OnState = func(core.State) { runtime.EventsEmit(ctx, "state", a.GetSnapshot()) }
 	a.eng.OnLog = func(line string) { runtime.EventsEmit(ctx, "log", line) }
+	a.eng.OnNotice = func(msg string) { runtime.EventsEmit(ctx, "notice", msg) }
 	go a.statsLoop()
-	if a.eng.Auth.LoggedIn() && a.eng.Settings().Email == "" {
-		go a.refreshProfile()
+	if a.eng.Auth.LoggedIn() {
+		go func() {
+			a.fillMissingEmail()
+			a.RefreshQuotas()
+		}()
 	}
 }
 
@@ -94,25 +100,30 @@ func (a *App) statsLoop() {
 	}
 }
 
-func (a *App) refreshProfile() {
-	token, err := a.eng.Auth.AccessToken()
+// fillMissingEmail names an account migrated from an old install.
+func (a *App) fillMissingEmail() {
+	if a.eng.Auth.ActiveEmail() != "" {
+		return
+	}
+	token, err := a.eng.Auth.AccessToken("", false)
 	if err != nil {
 		return
 	}
 	if p, err := mozilla.FetchProfile(token); err == nil && p.Email != "" {
-		s := a.eng.Settings()
-		s.Email = p.Email
-		a.eng.SaveSettings(s)
-		runtime.EventsEmit(a.ctx, "state", a.GetSnapshot())
+		a.eng.Auth.SetEmail("", p.Email)
+		a.emitState()
 	}
 }
+
+func (a *App) emitState() { runtime.EventsEmit(a.ctx, "state", a.GetSnapshot()) }
 
 func (a *App) GetSnapshot() Snapshot {
 	s := a.eng.Settings()
 	return Snapshot{
 		State:     a.eng.State(),
 		LoggedIn:  a.eng.Auth.LoggedIn(),
-		Email:     s.Email,
+		Email:     a.eng.Auth.ActiveEmail(),
+		Accounts:  a.eng.Auth.Accounts(),
 		Settings:  s,
 		Elevated:  core.IsElevated(),
 		Autostart: autostartEnabled(),
@@ -125,11 +136,8 @@ func (a *App) afterLogin(step *core.LoginStep, err error) (*core.LoginStep, erro
 		return nil, err
 	}
 	if step.Step == "done" {
-		s := a.eng.Settings()
-		s.Email = a.eng.Auth.PendingEmail()
-		a.eng.SaveSettings(s)
-		go a.refreshProfile()
-		runtime.EventsEmit(a.ctx, "state", a.GetSnapshot())
+		a.emitState()
+		go a.RefreshQuotas()
 	}
 	return step, nil
 }
@@ -150,13 +158,38 @@ func (a *App) SubmitUnblock(code string) (*core.LoginStep, error) {
 	return a.afterLogin(a.eng.Auth.SubmitUnblock(code))
 }
 
-func (a *App) Logout() {
-	a.eng.Disconnect()
-	a.eng.Auth.Logout()
-	s := a.eng.Settings()
-	s.Email = ""
-	a.eng.SaveSettings(s)
-	runtime.EventsEmit(a.ctx, "state", a.GetSnapshot())
+func (a *App) CancelLogin() { a.eng.Auth.CancelLogin() }
+
+// RemoveAccount signs one account out. A live connection moves to the next
+// account, or disconnects when none is left.
+func (a *App) RemoveAccount(email string) error {
+	wasActive := a.eng.Auth.ActiveEmail() == email
+	a.eng.Auth.Remove(email)
+	if !a.eng.Auth.LoggedIn() {
+		a.eng.Disconnect()
+	} else if wasActive && a.eng.State().Status == core.StatusConnected {
+		if err := a.eng.UseAccount(a.eng.Auth.ActiveEmail()); err != nil {
+			a.eng.Disconnect()
+		}
+	}
+	a.emitState()
+	return nil
+}
+
+func (a *App) UseAccount(email string) error {
+	err := a.eng.UseAccount(email)
+	a.emitState()
+	return err
+}
+
+// RefreshQuotas re-reads the remaining data of every account.
+func (a *App) RefreshQuotas() {
+	a.eng.RefreshQuotas()
+	a.emitState()
+}
+
+func (a *App) OpenLogFile() {
+	exec.Command("explorer.exe", "/select,", core.LogPath()).Start()
 }
 
 func (a *App) GetServers(force bool) ([]CountryDTO, error) {
@@ -231,7 +264,7 @@ func (a *App) SaveSettings(s store.Settings) error {
 	if s.ProxyPort < 1024 || s.ProxyPort > 65535 {
 		return errors.New("port must be between 1024 and 65535")
 	}
-	changed := s.ProxyPort != cur.ProxyPort || s.BypassIran != cur.BypassIran || s.BypassLAN != cur.BypassLAN
+	changed := s.ProxyPort != cur.ProxyPort || s.BypassIran != cur.BypassIran || s.BypassLAN != cur.BypassLAN || s.TLSSplit != cur.TLSSplit
 	if err := a.eng.SaveSettings(s); err != nil {
 		return err
 	}

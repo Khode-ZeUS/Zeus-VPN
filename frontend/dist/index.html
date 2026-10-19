@@ -22,7 +22,7 @@
     <div class="login-hero">
       <img class="login-logo" src="logo.svg" alt="">
       <h1>Zeus VPN</h1>
-      <p class="muted">Sign in with your Mozilla account</p>
+      <p class="muted" id="login-subtitle">Sign in with your Mozilla account</p>
     </div>
     <form id="login-form" class="form" autocomplete="on">
       <label class="field">
@@ -36,6 +36,7 @@
       </label>
       <div class="form-error" id="login-error"></div>
       <button class="btn primary" type="submit" id="login-submit"><span>Sign in</span></button>
+      <button class="btn ghost" type="button" id="login-cancel" hidden>Cancel</button>
     </form>
     <div class="login-foot">
       <p class="muted small">Free with any Mozilla account &middot; 50&nbsp;GB per month</p>
@@ -64,6 +65,7 @@
       <button class="account" id="btn-account" title="Settings">
         <span class="avatar" id="avatar">F</span>
         <span class="account-email" id="account-email"></span>
+        <span class="acct-count" id="acct-count" hidden></span>
       </button>
       <button class="icon-btn" id="btn-settings" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></button>
     </div>
@@ -112,6 +114,7 @@
       <div class="info-row"><span class="muted">IP address</span><span id="exit-ip">—</span></div>
       <div class="info-row" id="quota-row"><span class="muted">Monthly data</span><span id="quota-text">—</span></div>
       <div class="quota-bar"><span id="quota-fill"></span></div>
+      <div class="info-row" id="total-row" hidden><span class="muted">All accounts</span><span id="total-text">—</span></div>
     </div>
   </main>
 
@@ -134,17 +137,31 @@
       <button class="icon-btn" data-close title="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </div>
     <div class="settings">
+      <div class="group-label">Accounts</div>
+      <div class="accounts" id="account-list"></div>
+      <button class="btn ghost" id="btn-add-account"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add another account</button>
+      <label class="toggle-row"><span><b>Auto-switch accounts</b><small>Use the next account when one runs out of data</small></span><input type="checkbox" id="set-autoswitch"><i></i></label>
       <div class="group-label">Routing</div>
       <label class="toggle-row"><span><b>Bypass Iranian sites</b><small>.ir domains connect directly</small></span><input type="checkbox" id="set-bypass-ir"><i></i></label>
       <label class="toggle-row"><span><b>Bypass local network</b><small>Printers, routers and LAN stay direct</small></span><input type="checkbox" id="set-bypass-lan"><i></i></label>
+      <div class="group-label">Anti-filtering</div>
+      <div class="input-row"><span><b>TLS fragmentation</b><small>Hides server names from SNI filtering</small></span>
+        <select id="set-tls-split">
+          <option value="auto">Auto</option>
+          <option value="sni">Always (SNI)</option>
+          <option value="first_byte">First byte</option>
+          <option value="off">Off</option>
+        </select>
+      </div>
       <div class="group-label">App</div>
       <label class="toggle-row"><span><b>Connect on launch</b><small>Reconnect automatically</small></span><input type="checkbox" id="set-autoconnect"><i></i></label>
       <label class="toggle-row"><span><b>Start with Windows</b><small>Launch minimized at sign-in</small></span><input type="checkbox" id="set-autostart"><i></i></label>
       <div class="input-row"><span><b>Local proxy port</b><small>HTTP + SOCKS5 for other apps</small></span><input type="number" id="set-port" min="1024" max="65535"></div>
-      <div class="group-label">Account</div>
-      <div class="account-row"><span class="avatar" id="avatar2">F</span><span class="account-email" id="account-email2"></span></div>
-      <button class="btn ghost" id="btn-logs">View logs</button>
-      <button class="btn danger" id="btn-logout">Sign out</button>
+      <div class="group-label">Troubleshooting</div>
+      <div class="btn-row">
+        <button class="btn ghost" id="btn-logs">View logs</button>
+        <button class="btn ghost" id="btn-logfile">Open log file</button>
+      </div>
       <p class="about muted small" id="about"></p>
     </div>
   </section>

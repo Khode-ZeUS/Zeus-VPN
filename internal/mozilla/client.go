@@ -36,16 +36,42 @@ func Client() *http.Client {
 	clientOnce.Do(func() {
 		transport = &http.Transport{
 			Proxy:               nil,
-			DialContext:         netx.DialContext,
+			DialContext:         netx.DialResolved,
 			ForceAttemptHTTP2:   true,
 			TLSHandshakeTimeout: 15 * time.Second,
 			IdleConnTimeout:     60 * time.Second,
 			MaxIdleConnsPerHost: 4,
 		}
 		jar, _ := cookiejar.New(&cookiejar.Options{PublicSuffixList: publicsuffix.List})
-		httpClient = &http.Client{Transport: transport, Jar: jar, Timeout: 30 * time.Second}
+		httpClient = &http.Client{Transport: retryOnBlock{transport}, Jar: jar, Timeout: 30 * time.Second}
 	})
 	return httpClient
+}
+
+// retryOnBlock repeats a request once when the network cut off its TLS
+// handshake: the retry is sent fragmented (see netx auto mode). The request
+// never reached the server, so retrying is safe even for POSTs.
+type retryOnBlock struct{ rt http.RoundTripper }
+
+func (r retryOnBlock) RoundTrip(req *http.Request) (*http.Response, error) {
+	host := req.URL.Hostname()
+	wasBlocked := netx.HostBlocked(host)
+	resp, err := r.rt.RoundTrip(req)
+	if err == nil || wasBlocked || !netx.HostBlocked(host) || req.Context().Err() != nil {
+		return resp, err
+	}
+	if req.Body != nil && req.Body != http.NoBody {
+		if req.GetBody == nil {
+			return resp, err
+		}
+		body, gerr := req.GetBody()
+		if gerr != nil {
+			return resp, err
+		}
+		req = req.Clone(req.Context())
+		req.Body = body
+	}
+	return r.rt.RoundTrip(req)
 }
 
 // ResetConnections drops pooled connections, e.g. after the outbound

@@ -23,20 +23,25 @@
   - **System Proxy**: routes browsers and most apps; no administrator rights needed.
   - **Full VPN (TUN)**: a virtual network adapter that tunnels *every* app on the system, like WireGuard or v2rayN's TUN mode.
 - **Mozilla account sign-in** with email verification codes, confirmation links and unblock codes all handled in the app.
+- **Multiple accounts with auto-switch**: add as many Mozilla accounts as you like. When one runs out of its monthly data, Zeus VPN moves to the account with the most data left, without dropping the connection.
 - **30+ countries and cities**, with live latency tests, search and an automatic *Recommended* option.
+- **Anti-filtering**: TLS ClientHello fragmentation hides server names from SNI filters (automatic when a handshake is blocked), and VPN server addresses are resolved over DNS-over-HTTPS.
 - **DNS over HTTPS** through the tunnel in Full VPN mode, so DNS lookups are not visible to or poisoned by the local network.
 - **Smart routing**: optionally keep `.ir` sites and your local network (printers, router) off the VPN.
 - **Live stats**: download/upload speed, exit IP and your remaining monthly data (50 GB free per month).
 - **Local HTTP + SOCKS5 proxy** on `127.0.0.1:10820` for apps that need manual proxy settings (Telegram, browsers, git, ...).
 - **Safe by design**: your previous proxy settings (for example v2rayN's) are restored on disconnect, even after a crash; sign-in tokens are encrypted with Windows DPAPI.
-- Single small executable, start with Windows, connect on launch.
+- **Self-healing connection**: the short-lived proxy pass is renewed in the background, and a rejected pass is replaced on the spot.
+- Single small executable, start with Windows, connect on launch, logs saved to `%APPDATA%\ZeusVPN\zeusvpn.log`.
 
 <p align="center">
-  <img src="docs/screen-login.png" width="240" alt="Sign in">
+  <img src="docs/screen-connected.png" width="200" alt="Connected">
   &nbsp;
-  <img src="docs/screen-connected.png" width="240" alt="Connected">
+  <img src="docs/screen-settings.png" width="200" alt="Accounts">
   &nbsp;
-  <img src="docs/screen-servers.png" width="240" alt="Locations">
+  <img src="docs/screen-servers.png" width="200" alt="Locations">
+  &nbsp;
+  <img src="docs/screen-login.png" width="200" alt="Sign in">
 </p>
 
 ## Install
@@ -86,6 +91,8 @@ The app is written to `build/bin/ZeusVPN.exe` and the installer to `build/bin/Ze
 
 - **System Proxy**: مرورگرها و بیشتر برنامه‌ها از VPN رد می‌شوند و دسترسی ادمین لازم ندارد.
 - **Full VPN**: همه‌ی برنامه‌های سیستم (حتی بازی‌ها و برنامه‌هایی که پروکسی را پشتیبانی نمی‌کنند) از VPN رد می‌شوند. اولین بار برنامه برای دسترسی ادمین سؤال می‌کند.
+- **چند اکانت**: می‌توانید چند اکانت موزیلا اضافه کنید (تنظیمات ← Add another account). وقتی حجم یکی تمام شود، برنامه خودش بدون قطع شدن اتصال به اکانت بعدی سوییچ می‌کند.
+- **ضد فیلترینگ**: اگر فیلترینگ اتصال به سرورها را ببندد، برنامه خودش TLS را تکه‌تکه (fragment) می‌فرستد تا اسم سرور (SNI) دیده نشود.
 - سایت‌های `.ir` به‌صورت پیش‌فرض مستقیم باز می‌شوند (قابل تغییر در تنظیمات).
 - DNS در حالت Full VPN از داخل تونل و به‌صورت رمزنگاری‌شده (DoH) انجام می‌شود، پس آلودگی DNS مشکلی ایجاد نمی‌کند.
 - برای برنامه‌هایی مثل تلگرام می‌توانید پروکسی `127.0.0.1:10820` (HTTP یا SOCKS5) را دستی تنظیم کنید.

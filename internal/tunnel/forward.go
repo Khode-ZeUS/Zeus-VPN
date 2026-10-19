@@ -19,14 +19,23 @@ import (
 func (u *Upstream) RoundTrip(req *http.Request) (*http.Response, error) {
 	replayable := req.Body == nil || req.Body == http.NoBody
 	var lastErr error
-	for attempt := 0; attempt < 2; attempt++ {
+	renewed := false
+	for attempt := 0; attempt < 3; attempt++ {
 		cc, err := u.session(req.Context())
 		if err != nil {
 			return nil, err
 		}
+		token := *u.token.Load()
 		r := req.Clone(req.Context())
-		r.Header.Set("Proxy-Authorization", "Bearer "+*u.token.Load())
+		r.Header.Set("Proxy-Authorization", "Bearer "+token)
 		resp, err := cc.RoundTrip(r)
+		// Only 407 is unambiguously the proxy (403 may come from the site).
+		if err == nil && resp.StatusCode == http.StatusProxyAuthRequired && replayable && !renewed &&
+			u.renewAfterRejection(req.Context(), resp.StatusCode, token) {
+			resp.Body.Close()
+			renewed = true
+			continue
+		}
 		if err != nil {
 			lastErr = err
 			if st := cc.State(); replayable && (st.Closed || st.Closing || errors.Is(err, http2.ErrNoCachedConn)) {

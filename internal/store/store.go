@@ -27,11 +27,53 @@ type Settings struct {
 	BypassIran  bool   `json:"bypass_iran"`
 	BypassLAN   bool   `json:"bypass_lan"`
 	AutoConnect bool   `json:"auto_connect"`
-	Email       string `json:"email"`
+	AutoSwitch  bool   `json:"auto_switch"`
+	TLSSplit    string `json:"tls_split"`
+	// Email is only read to migrate single-account installs.
+	Email string `json:"email,omitempty"`
 }
 
 func DefaultSettings() Settings {
-	return Settings{Mode: ModeProxy, ProxyPort: 10820, BypassIran: true, BypassLAN: true}
+	return Settings{Mode: ModeProxy, ProxyPort: 10820, BypassIran: true, BypassLAN: true, AutoSwitch: true, TLSSplit: "auto"}
+}
+
+// Account is one Mozilla account with its sign-in and last known data quota.
+type Account struct {
+	Email      string    `json:"email"`
+	Tokens     Tokens    `json:"tokens"`
+	QuotaLimit int64     `json:"quota_limit"`
+	QuotaLeft  int64     `json:"quota_left"`
+	QuotaReset time.Time `json:"quota_reset"`
+	QuotaAt    time.Time `json:"quota_at"`
+	// Exhausted is set when Mozilla refused service for lack of quota; it
+	// clears once QuotaReset has passed.
+	Exhausted  bool `json:"exhausted"`
+	NeedsLogin bool `json:"needs_login"`
+}
+
+// Usable reports whether the account can currently be used for the VPN.
+func (a *Account) Usable() bool {
+	if a.NeedsLogin {
+		return false
+	}
+	if a.Exhausted && (a.QuotaReset.IsZero() || time.Now().Before(a.QuotaReset)) {
+		return false
+	}
+	return true
+}
+
+type Accounts struct {
+	Active string    `json:"active"`
+	List   []Account `json:"list"`
+}
+
+func (a *Accounts) Find(email string) *Account {
+	for i := range a.List {
+		if a.List[i].Email == email {
+			return &a.List[i]
+		}
+	}
+	return nil
 }
 
 type Tokens struct {
@@ -89,29 +131,48 @@ func SaveSettings(s Settings) error {
 	return writeAtomic("settings.json", b)
 }
 
-func LoadTokens() *Tokens {
-	if b, err := os.ReadFile(path("auth.bin")); err == nil {
-		if plain, err := unprotect(b); err == nil {
-			var t Tokens
-			if json.Unmarshal(plain, &t) == nil && (t.AccessToken != "" || t.RefreshToken != "") {
-				return &t
-			}
-		}
+func readProtected(name string, v any) bool {
+	b, err := os.ReadFile(path(name))
+	if err != nil {
+		return false
 	}
-	return importLegacyTokens()
+	plain, err := unprotect(b)
+	if err != nil {
+		return false
+	}
+	return json.Unmarshal(plain, v) == nil
 }
 
-func SaveTokens(t *Tokens) error {
-	plain, _ := json.Marshal(t)
+func LoadAccounts() *Accounts {
+	var a Accounts
+	if readProtected("accounts.bin", &a) {
+		return &a
+	}
+	// Migrate a single-account install (auth.bin) or a Python CLI session.
+	var t *Tokens
+	var single Tokens
+	if readProtected("auth.bin", &single) && (single.AccessToken != "" || single.RefreshToken != "") {
+		t = &single
+	} else {
+		t = importLegacyTokens()
+	}
+	if t != nil {
+		email := LoadSettings().Email
+		a = Accounts{Active: email, List: []Account{{Email: email, Tokens: *t}}}
+		if SaveAccounts(&a) == nil {
+			os.Remove(path("auth.bin"))
+		}
+	}
+	return &a
+}
+
+func SaveAccounts(a *Accounts) error {
+	plain, _ := json.Marshal(a)
 	enc, err := protect(plain)
 	if err != nil {
 		return err
 	}
-	return writeAtomic("auth.bin", enc)
-}
-
-func DeleteTokens() {
-	os.Remove(path("auth.bin"))
+	return writeAtomic("accounts.bin", enc)
 }
 
 // importLegacyTokens picks up a session from the Python FoxyVPN CLI
@@ -140,15 +201,13 @@ func importLegacyTokens() *Tokens {
 	if json.Unmarshal(b, &legacy) != nil || (legacy.AccessToken == "" && legacy.RefreshToken == "") {
 		return nil
 	}
-	t := &Tokens{
+	return &Tokens{
 		AccessToken:  legacy.AccessToken,
 		RefreshToken: legacy.RefreshToken,
 		Scope:        legacy.Scope,
 		ObtainedAt:   time.Unix(int64(legacy.ObtainedAt), 0),
 		ExpiresIn:    legacy.ExpiresIn,
 	}
-	SaveTokens(t)
-	return t
 }
 
 // ProxyBackup records the system proxy configuration we replaced, so it can

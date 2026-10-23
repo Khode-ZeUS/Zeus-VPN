@@ -79,14 +79,14 @@ func (e *Engine) dropped(cause error) {
 	e.Log("warning", "connection to the VPN server lost: "+cause.Error())
 	e.update(func(s *State) { s.Status = StatusReconnecting })
 	st := e.Settings()
-	if !st.KillSwitch {
+	if !st.KillSwitch || !killswitch.Supported {
 		e.notify("VPN connection lost, reconnecting…")
 		return
 	}
 	e.mu.Lock()
 	var luid uint64
-	if e.vpn != nil {
-		luid = e.vpn.LUID()
+	if e.tun != nil {
+		luid = e.tun.LUID()
 	}
 	e.mu.Unlock()
 	if err := killswitch.Enable(luid, st.BypassLAN); err != nil {

@@ -67,7 +67,9 @@ func LookupHost(ctx context.Context, host string) ([]netip.Addr, error) {
 	return sorted, nil
 }
 
-// DialResolved dials "host:port" using LookupHost, trying each address.
+// DialResolved dials "host:port" using LookupHost. Addresses are raced,
+// each started 300 ms after the previous one, and the first connection
+// wins: some addresses of a CDN can be blackholed while others work.
 func DialResolved(ctx context.Context, network, address string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
@@ -77,21 +79,48 @@ func DialResolved(ctx context.Context, network, address string) (net.Conn, error
 	if err != nil {
 		return nil, err
 	}
-	var lastErr error
-	for _, a := range addrs {
-		c, err := DialContext(ctx, network, net.JoinHostPort(a.String(), port))
-		if err == nil {
-			return c, nil
+	if len(addrs) == 0 {
+		return nil, errors.New("no addresses for " + host)
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	type result struct {
+		c   net.Conn
+		err error
+	}
+	results := make(chan result, len(addrs))
+	for i, a := range addrs {
+		go func(i int, a netip.Addr) {
+			select {
+			case <-time.After(time.Duration(i) * 300 * time.Millisecond):
+			case <-ctx.Done():
+				results <- result{nil, ctx.Err()}
+				return
+			}
+			c, err := DialContext(ctx, network, net.JoinHostPort(a.String(), port))
+			results <- result{c, err}
+		}(i, a)
+	}
+	var firstErr error
+	for range addrs {
+		r := <-results
+		if r.err == nil {
+			cancel()
+			// Close any other connection that still completes.
+			go func(n int) {
+				for i := 0; i < n; i++ {
+					if late := <-results; late.c != nil {
+						late.c.Close()
+					}
+				}
+			}(len(addrs) - 1)
+			return r.c, nil
 		}
-		lastErr = err
-		if ctx.Err() != nil {
-			break
+		if firstErr == nil || errors.Is(firstErr, context.Canceled) {
+			firstErr = r.err
 		}
 	}
-	if lastErr == nil {
-		lastErr = errors.New("no addresses for " + host)
-	}
-	return nil, lastErr
+	return nil, firstErr
 }
 
 func lookupDoH(ctx context.Context, host string) []netip.Addr {

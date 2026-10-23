@@ -22,9 +22,6 @@ import (
 	"zeusvpn/internal/store"
 	"zeusvpn/internal/sysproxy"
 	"zeusvpn/internal/tunnel"
-	"zeusvpn/internal/vpn"
-
-	"golang.org/x/sys/windows"
 )
 
 const (
@@ -68,12 +65,11 @@ type Engine struct {
 	serversAt time.Time
 	state     State
 
-	up      *tunnel.Upstream
-	mixed   *tunnel.MixedServer
-	binding *vpn.Binding
-	vpn     *vpn.VPN
-	cancel  context.CancelFunc
-	done    chan struct{}
+	up     *tunnel.Upstream
+	mixed  *tunnel.MixedServer
+	tun    TunDriver
+	cancel context.CancelFunc
+	done   chan struct{}
 
 	passMu      sync.Mutex
 	passExpires time.Time
@@ -214,10 +210,6 @@ func (e *Engine) fetchServersViaTunnel() ([]mozilla.Country, error) {
 	return list, nil
 }
 
-func IsElevated() bool {
-	return windows.GetCurrentProcessToken().IsElevated()
-}
-
 // Servers returns the cached server list, refreshing it when stale.
 func (e *Engine) Servers(force bool) ([]mozilla.Country, error) {
 	e.mu.Lock()
@@ -343,10 +335,10 @@ func (e *Engine) Connect() {
 }
 
 func (e *Engine) connect(ctx context.Context, st store.Settings) error {
-	if st.Mode == store.ModeTUN && !IsElevated() {
+	if st.Mode == store.ModeTUN && TunNeedsElevation && !IsElevated() {
 		return errors.New("full VPN mode needs administrator rights")
 	}
-	if st.KillSwitch && !IsElevated() {
+	if st.KillSwitch && killswitch.Supported && !IsElevated() {
 		return errors.New("the kill switch needs administrator rights")
 	}
 	if !e.Auth.LoggedIn() {
@@ -354,6 +346,17 @@ func (e *Engine) connect(ctx context.Context, st store.Settings) error {
 	}
 	e.Log("info", fmt.Sprintf("requesting proxy pass from Mozilla (TLS fragmentation: %s)", netx.SplitMode()))
 	pass, email, err := e.acquirePass(st.AutoSwitch)
+	// Mozilla's API hosts are intermittently unreachable; retry briefly
+	// before giving up on network errors.
+	for attempt := 1; err != nil && attempt < 3 && !switchable(err) && !errors.Is(err, ErrNotLoggedIn) && ctx.Err() == nil; attempt++ {
+		e.Log("warning", "could not get a proxy pass, retrying: "+err.Error())
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(attempt) * 3 * time.Second):
+		}
+		pass, email, err = e.acquirePass(st.AutoSwitch)
+	}
 	if err != nil {
 		return err
 	}
@@ -370,15 +373,15 @@ func (e *Engine) connect(ctx context.Context, st store.Settings) error {
 	}
 	e.Log("info", fmt.Sprintf("selected upstream proxy %s (%s)", ep.Addr(), ep.CountryCode))
 
+	var tun TunDriver
 	if st.Mode == store.ModeTUN {
-		b, err := vpn.NewBinding()
-		if err != nil {
+		tun = NewTunDriver()
+		e.mu.Lock()
+		e.tun = tun
+		e.mu.Unlock()
+		if err := tun.Prepare(); err != nil {
 			return err
 		}
-		e.mu.Lock()
-		e.binding = b
-		e.mu.Unlock()
-		mozilla.ResetConnections()
 	}
 
 	up, err := tunnel.NewUpstream(ctx, ep.Host, ep.Port, pass.Token, e.onRejected)
@@ -391,6 +394,8 @@ func (e *Engine) connect(ctx context.Context, st store.Settings) error {
 	if err := up.Warmup(ctx); err != nil {
 		return err
 	}
+	// From now on Mozilla's API can also be reached through the tunnel.
+	mozilla.SetTunnel(up.Dial)
 	e.Log("info", "upstream transport=http2")
 
 	dial, forward := e.routes(up, st)
@@ -404,13 +409,14 @@ func (e *Engine) connect(ctx context.Context, st store.Settings) error {
 	e.Log("info", "local proxy (HTTP + SOCKS5) listening on "+mixed.Addr())
 
 	if st.Mode == store.ModeTUN {
-		v, err := vpn.Start(e.binding, vpn.Options{Upstream: up, Forward: forward, BypassIran: st.BypassIran, Log: e.logRaw})
-		if err != nil {
+		onFail := func(err error) {
+			e.Log("error", err.Error())
+			e.notify("Full VPN stopped: " + err.Error())
+			go e.Disconnect()
+		}
+		if err := tun.Start(TunConfig{Dial: up.Dial, Forward: forward, ProxyAddr: mixed.Addr(), BypassIran: st.BypassIran, BypassLAN: st.BypassLAN, Log: e.logRaw, OnFail: onFail}); err != nil {
 			return err
 		}
-		e.mu.Lock()
-		e.vpn = v
-		e.mu.Unlock()
 		e.Log("info", "full VPN mode active: all system traffic is tunneled")
 	} else {
 		if err := sysproxy.Enable(mixed.Addr(), st.BypassIran, st.BypassLAN); err != nil {
@@ -521,11 +527,12 @@ func (e *Engine) teardown() {
 		e.Log("info", "kill switch off: internet unblocked")
 	}
 	e.mu.Lock()
-	v, mixed, up, b := e.vpn, e.mixed, e.up, e.binding
-	e.vpn, e.mixed, e.up, e.binding = nil, nil, nil, nil
+	tun, mixed, up := e.tun, e.mixed, e.up
+	e.tun, e.mixed, e.up = nil, nil, nil
 	e.mu.Unlock()
-	if v != nil {
-		v.Close()
+	mozilla.SetTunnel(nil)
+	if tun != nil {
+		tun.Close()
 	}
 	sysproxy.Restore()
 	if mixed != nil {
@@ -533,10 +540,6 @@ func (e *Engine) teardown() {
 	}
 	if up != nil {
 		up.Close()
-	}
-	if b != nil {
-		b.Close()
-		mozilla.ResetConnections()
 	}
 }
 

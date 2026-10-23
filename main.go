@@ -5,20 +5,24 @@ import (
 	"os"
 	"slices"
 
+	"zeusvpn/internal/appapi"
 	"zeusvpn/internal/sysproxy"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/windows"
 )
 
 //go:embed all:frontend/dist
 var assets embed.FS
 
-const Version = "1.0.0.3"
+const Version = appapi.Version
 
 func main() {
+	// The Full VPN helper (macOS, Linux) runs without a window.
+	if runSpecialMode() {
+		return
+	}
 	// Used by the installer: undo a system proxy left by a killed instance.
 	if slices.Contains(os.Args, "--cleanup") {
 		sysproxy.Restore()
@@ -30,7 +34,7 @@ func main() {
 		return
 	}
 	app := NewApp(slices.Contains(os.Args, "--connect"), slices.Contains(os.Args, "--minimized"))
-	err := wails.Run(&options.App{
+	opts := &options.App{
 		Title:            appTitle,
 		Width:            390,
 		Height:           720,
@@ -43,15 +47,9 @@ func main() {
 		OnDomReady:       app.domReady,
 		OnShutdown:       app.shutdown,
 		Bind:             []interface{}{app},
-		Windows: &windows.Options{
-			Theme:                windows.Dark,
-			WebviewUserDataPath:  webviewDataDir(),
-			DisablePinchZoom:     true,
-			ZoomFactor:           1.0,
-			IsZoomControlEnabled: false,
-		},
-	})
-	if err != nil {
-		showError(appTitle + " could not start:\n\n" + err.Error() + "\n\nMake sure Microsoft Edge WebView2 Runtime is installed.")
+	}
+	platformOptions(opts)
+	if err := wails.Run(opts); err != nil {
+		showError(appTitle + " could not start:\n\n" + err.Error() + startHint)
 	}
 }

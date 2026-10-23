@@ -1,5 +1,7 @@
-// Package vpn implements full-system VPN mode: a WinTun adapter with a
-// userspace TCP/IP stack, auto-routing, and DNS hijacking.
+// Package vpn implements full-system VPN mode: a virtual adapter (WinTun on
+// Windows, utun on macOS, /dev/net/tun on Linux, or a descriptor handed over
+// by the Android/iOS VPN APIs) with a userspace TCP/IP stack, auto-routing,
+// and DNS hijacking.
 package vpn
 
 import (
@@ -11,6 +13,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -31,15 +34,45 @@ const (
 	mtu           = 9000
 )
 
+// Addresses of the virtual adapter. DNSServer is the address the host OS is
+// told to use for DNS; every DNS query sent into the tunnel is answered.
+var (
+	Inet4Prefix = netip.MustParsePrefix("172.19.0.1/30")
+	Inet6Prefix = netip.MustParsePrefix("fdfe:dcba:9876::1/126")
+	DNSServer   = netip.MustParseAddr("172.19.0.2")
+)
+
 // Binding tracks the physical default interface and binds our own sockets to
 // it, so they bypass the VPN routes.
 type Binding struct {
 	finder *control.DefaultInterfaceFinder
 	netMon tun.NetworkUpdateMonitor
 	ifMon  tun.DefaultInterfaceMonitor
+	bound  bool
 }
 
+// NewBinding watches the default interface and binds this process's
+// outbound sockets to it.
 func NewBinding() (*Binding, error) {
+	b, err := NewMonitor()
+	if err != nil {
+		return nil, err
+	}
+	b.bound = true
+	netx.SetControl(control.BindToInterfaceFunc(b.finder, func(network, address string) (string, int, error) {
+		iface := b.ifMon.DefaultInterface()
+		if iface == nil {
+			return "", -1, tun.ErrNoRoute
+		}
+		return iface.Name, iface.Index, nil
+	}))
+	return b, nil
+}
+
+// NewMonitor only watches the default interface, which auto-routing needs.
+// The TUN helper process uses it: its own sockets go to the app over
+// loopback and must not be bound to the physical interface.
+func NewMonitor() (*Binding, error) {
 	finder := control.NewDefaultInterfaceFinder()
 	if err := finder.Update(); err != nil {
 		return nil, err
@@ -61,27 +94,30 @@ func NewBinding() (*Binding, error) {
 		netMon.Close()
 		return nil, fmt.Errorf("no internet connection detected: %w", err)
 	}
-	b := &Binding{finder: finder, netMon: netMon, ifMon: ifMon}
-	netx.SetControl(control.BindToInterfaceFunc(finder, func(network, address string) (string, int, error) {
-		iface := ifMon.DefaultInterface()
-		if iface == nil {
-			return "", -1, tun.ErrNoRoute
-		}
-		return iface.Name, iface.Index, nil
-	}))
-	return b, nil
+	return &Binding{finder: finder, netMon: netMon, ifMon: ifMon}, nil
 }
 
 func (b *Binding) Close() {
-	netx.SetControl(nil)
+	if b.bound {
+		netx.SetControl(nil)
+	}
 	b.ifMon.Close()
 	b.netMon.Close()
 }
 
 type Options struct {
-	Upstream   *tunnel.Upstream
-	Forward    tunnel.RoundTripFunc
+	// Dial opens a TCP connection through the VPN; DNS over HTTPS uses it too.
+	Dial    tunnel.DialFunc
+	Forward tunnel.RoundTripFunc
+	// BypassIran connects .ir sites directly (through netx).
 	BypassIran bool
+	// FD is a TUN descriptor opened by the Android or iOS VPN API. The host
+	// app then configures addresses, routes and DNS itself.
+	FD int
+	// MTU overrides the default MTU (for FD).
+	MTU int
+	// ExcludeLAN keeps private networks off the auto-routes.
+	ExcludeLAN bool
 	Log        func(string)
 }
 
@@ -101,23 +137,61 @@ var privateRanges = []netip.Prefix{
 	netip.MustParsePrefix("255.255.255.255/32"),
 }
 
+// linkLocalRanges stay off the VPN even when the LAN is routed through it.
+var linkLocalRanges = []netip.Prefix{
+	netip.MustParsePrefix("169.254.0.0/16"),
+	netip.MustParsePrefix("224.0.0.0/4"),
+	netip.MustParsePrefix("255.255.255.255/32"),
+}
+
+// Start creates the adapter (or adopts opts.FD) and starts the stack. b is
+// the interface monitor for auto-routing; it is unused (and may be nil) with
+// opts.FD.
 func Start(b *Binding, opts Options) (*VPN, error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	v := &VPN{cancel: cancel, dns: NewDoH(opts.Upstream.Dial)}
+	v := &VPN{cancel: cancel, dns: NewDoH(opts.Dial)}
 	h := &handler{ctx: ctx, opts: opts, dns: v.dns}
 
 	tunOpts := tun.Options{
-		Name:                     InterfaceName,
-		Inet4Address:             []netip.Prefix{netip.MustParsePrefix("172.19.0.1/30")},
-		Inet6Address:             []netip.Prefix{netip.MustParsePrefix("fdfe:dcba:9876::1/126")},
-		MTU:                      mtu,
-		AutoRoute:                true,
-		StrictRoute:              true,
-		Inet4RouteExcludeAddress: privateRanges,
-		InterfaceFinder:          b.finder,
-		InterfaceMonitor:         b.ifMon,
-		Logger:                   logger.NOP(),
-		EXP_MultiPendingPackets:  true,
+		Name:                    InterfaceName,
+		Inet4Address:            []netip.Prefix{Inet4Prefix},
+		Inet6Address:            []netip.Prefix{Inet6Prefix},
+		MTU:                     mtu,
+		Logger:                  logger.NOP(),
+		EXP_MultiPendingPackets: true,
+	}
+	var finder control.InterfaceFinder
+	if opts.FD > 0 {
+		tunOpts.FileDescriptor = opts.FD
+		tunOpts.EXP_ExternalConfiguration = true
+		if opts.MTU > 0 {
+			tunOpts.MTU = uint32(opts.MTU)
+		}
+		// Never updated: listing interfaces is not allowed on Android.
+		finder = control.NewDefaultInterfaceFinder()
+		tunOpts.InterfaceFinder = finder
+		if runtime.GOOS == "darwin" || runtime.GOOS == "ios" {
+			tunOpts.Name = "utun"
+		}
+	} else {
+		if runtime.GOOS == "darwin" {
+			tunOpts.Name = tun.CalculateInterfaceName("")
+		}
+		tunOpts.AutoRoute = true
+		// Linux policy routing: the table and rule priorities sing-box uses.
+		tunOpts.IPRoute2TableIndex = tun.DefaultIPRoute2TableIndex
+		tunOpts.IPRoute2RuleIndex = tun.DefaultIPRoute2RuleIndex
+		// On Windows strict routing also stops DNS queries from leaking
+		// through the physical adapter.
+		tunOpts.StrictRoute = runtime.GOOS == "windows"
+		if opts.ExcludeLAN || runtime.GOOS == "windows" {
+			tunOpts.Inet4RouteExcludeAddress = privateRanges
+		} else {
+			tunOpts.Inet4RouteExcludeAddress = linkLocalRanges
+		}
+		tunOpts.InterfaceFinder = b.finder
+		tunOpts.InterfaceMonitor = b.ifMon
+		finder = b.finder
 	}
 	tunIf, err := tun.New(tunOpts)
 	if err != nil {
@@ -131,7 +205,7 @@ func Start(b *Binding, opts Options) (*VPN, error) {
 		UDPTimeout:      5 * time.Minute,
 		Handler:         h,
 		Logger:          logger.NOP(),
-		InterfaceFinder: b.finder,
+		InterfaceFinder: finder,
 	})
 	if err != nil {
 		tunIf.Close()
@@ -159,6 +233,12 @@ func (v *VPN) LUID() uint64 {
 		return l.LUID()
 	}
 	return 0
+}
+
+// Name is the adapter's interface name (e.g. utun5).
+func (v *VPN) Name() string {
+	n, _ := v.tunIf.Name()
+	return n
 }
 
 func (v *VPN) Close() {
@@ -237,7 +317,7 @@ func (h *handler) handleTCP(conn net.Conn, dst M.Socksaddr) error {
 	if h.opts.BypassIran && (strings.HasSuffix(domain, ".ir") || domain == "ir") {
 		up, err = netx.DialContext(ctx, "tcp", net.JoinHostPort(dst.Addr.Unmap().String(), strconv.Itoa(int(port))))
 	} else {
-		up, err = h.opts.Upstream.Dial(ctx, target)
+		up, err = h.opts.Dial(ctx, target)
 	}
 	cancel()
 	if err != nil {

@@ -1,0 +1,182 @@
+# Builds Zeus VPN for every platform. Pushing a tag like v1.1.0.0 also
+# publishes the builds as a GitHub Release.
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  VERSION: "1.1.0.0"
+  WAILS_VERSION: v2.16.0
+  # Keep in step with golang.org/x/mobile in go.mod.
+  GOMOBILE_VERSION: v0.0.0-20261011034528-197770444867
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install Wails and NSIS
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
+          choco install nsis -y --no-progress
+      - name: Build
+        run: wails build -tags with_gvisor -trimpath -ldflags "-s -w" -nsis
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            build/bin/ZeusVPN.exe
+            build/bin/ZeusVPN-amd64-installer.exe
+
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
+      - name: Build (Apple silicon + Intel)
+        run: wails build -platform darwin/universal -tags with_gvisor -trimpath -ldflags "-s -w"
+      - name: Package DMG
+        run: |
+          # Ad-hoc signature: the app runs after "Open" from the context menu
+          # (or `xattr -cr "/Applications/Zeus VPN.app"`).
+          codesign --force --deep --sign - build/bin/ZeusVPN.app
+          mkdir dmg
+          cp -R build/bin/ZeusVPN.app "dmg/Zeus VPN.app"
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname "Zeus VPN" -srcfolder dmg -ov -format UDZO build/bin/ZeusVPN-macos-universal.dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: build/bin/ZeusVPN-macos-universal.dmg
+
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+          go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
+      - name: Build
+        run: wails build -platform linux/amd64 -tags "with_gvisor webkit2_41" -trimpath -ldflags "-s -w"
+      - name: Package
+        run: build/linux/package.sh "$VERSION" amd64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            build/bin/*.deb
+            build/bin/*.tar.gz
+
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Build the Go library (gomobile)
+        run: |
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+          export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          go install golang.org/x/mobile/cmd/gomobile@$GOMOBILE_VERSION golang.org/x/mobile/cmd/gobind@$GOMOBILE_VERSION
+          gomobile init
+          mkdir -p android/app/libs
+          gomobile bind -target=android/arm64,android/arm,android/amd64 -androidapi 24 \
+            -tags with_gvisor -trimpath -ldflags="-s -w" -o android/app/libs/zeuscore.aar ./mobile
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+      - name: Build APKs
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ZEUS_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ZEUS_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ZEUS_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          # Without a release keystore secret the APKs are signed with a
+          # debug key: installable, but not upgradable to a differently
+          # signed build.
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            export ZEUS_KEYSTORE="$RUNNER_TEMP/release.jks"
+          fi
+          gradle -p android assembleRelease
+          mkdir -p out
+          for f in android/app/build/outputs/apk/release/app-*-release.apk; do
+            abi=$(basename "$f" | sed -e 's/^app-//' -e 's/-release.apk$//')
+            cp "$f" "out/ZeusVPN-android-$abi.apk"
+          done
+          ls -l out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: out/*.apk
+
+  ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build the Go library (gomobile)
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@$GOMOBILE_VERSION golang.org/x/mobile/cmd/gobind@$GOMOBILE_VERSION
+          gomobile init
+          gomobile bind -target=ios,iossimulator -iosversion 15.0 \
+            -tags with_gvisor -trimpath -ldflags="-s -w" -o ios/Frameworks/Zeuscore.xcframework ./mobile
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          cd ios && xcodegen generate
+      - name: Build (unsigned)
+        run: |
+          xcodebuild -project ios/ZeusVPN.xcodeproj -scheme ZeusVPN -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath ios/build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+          # An unsigned .ipa, to be signed with your own Apple Developer
+          # account (the VPN extension needs one).
+          mkdir -p out/Payload
+          cp -R ios/build/Build/Products/Release-iphoneos/ZeusVPN.app out/Payload/
+          (cd out && zip -qry ZeusVPN-ios-unsigned.ipa Payload)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios
+          path: out/ZeusVPN-ios-unsigned.ipa
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, macos, linux, android, ios]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          draft: true

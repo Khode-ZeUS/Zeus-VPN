@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>Zeus VPN</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -141,7 +141,7 @@
       <div class="accounts" id="account-list"></div>
       <button class="btn ghost" id="btn-add-account"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add another account</button>
       <label class="toggle-row"><span><b>Auto-switch accounts</b><small>Use the next account when one runs out of data</small></span><input type="checkbox" id="set-autoswitch"><i></i></label>
-      <div class="group-label">Protection</div>
+      <div class="group-label" id="group-protection">Protection</div>
       <label class="toggle-row"><span><b>Kill switch</b><small>If the VPN drops, block the internet until it reconnects or you disconnect. Needs administrator.</small></span><input type="checkbox" id="set-killswitch"><i></i></label>
       <div class="group-label">Routing</div>
       <label class="toggle-row"><span><b>Bypass Iranian sites</b><small>.ir domains connect directly</small></span><input type="checkbox" id="set-bypass-ir"><i></i></label>
@@ -189,6 +189,7 @@
 
   <div class="toast" id="toast" hidden></div>
 
+  <script src="bridge.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

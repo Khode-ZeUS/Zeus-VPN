@@ -46,6 +46,15 @@ type Auth struct {
 
 func NewAuth() *Auth { return &Auth{accs: store.LoadAccounts()} }
 
+// Reload re-reads the accounts from disk, for when another process (the iOS
+// network extension) may have refreshed tokens or quotas.
+func (a *Auth) Reload() {
+	accs := store.LoadAccounts()
+	a.mu.Lock()
+	a.accs = accs
+	a.mu.Unlock()
+}
+
 var invisible = regexp.MustCompile(`[\s\x{200B}-\x{200D}\x{FEFF}\x{00A0}]+`)
 
 func cleanEmail(s string) string { return invisible.ReplaceAllString(s, "") }

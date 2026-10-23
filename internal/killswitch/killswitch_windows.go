@@ -15,6 +15,9 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// Supported reports whether this platform has a kill switch.
+const Supported = true
+
 type wfpObjectInstaller func(uintptr) error
 
 type baseObjects struct {

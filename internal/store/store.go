@@ -1,17 +1,15 @@
-// Package store persists settings and credentials under %APPDATA%\ZeusVPN.
-// OAuth tokens are encrypted with DPAPI so only the current Windows user can
-// read them.
+// Package store persists settings and credentials in the user's config
+// directory (%APPDATA%\ZeusVPN on Windows). OAuth tokens are encrypted: with
+// DPAPI on Windows, and with a key kept in the system keychain (or a private
+// key file) elsewhere.
 package store
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
-	"unsafe"
-
-	"golang.org/x/sys/windows"
 )
 
 const (
@@ -93,12 +91,30 @@ func (t *Tokens) Valid() bool {
 	return time.Now().Before(t.ObtainedAt.Add(time.Duration(t.ExpiresIn)*time.Second - 2*time.Minute))
 }
 
+var (
+	dirMu   sync.Mutex
+	dirOver string
+)
+
+// SetDir overrides the data directory (used by the mobile apps, whose
+// sandbox or shared app-group container is chosen by the host app).
+func SetDir(d string) {
+	dirMu.Lock()
+	dirOver = d
+	dirMu.Unlock()
+}
+
 func Dir() string {
-	base, err := os.UserConfigDir()
-	if err != nil {
-		base = os.TempDir()
+	dirMu.Lock()
+	d := dirOver
+	dirMu.Unlock()
+	if d == "" {
+		base, err := os.UserConfigDir()
+		if err != nil {
+			base = os.TempDir()
+		}
+		d = filepath.Join(base, "ZeusVPN")
 	}
-	d := filepath.Join(base, "ZeusVPN")
 	os.MkdirAll(d, 0o700)
 	return d
 }
@@ -253,29 +269,3 @@ func LoadProxyBackup() (*ProxyBackup, error) {
 }
 
 func ClearProxyBackup() { os.Remove(path("sysproxy-backup.json")) }
-
-func protect(plain []byte) ([]byte, error) {
-	if len(plain) == 0 {
-		return nil, errors.New("nothing to protect")
-	}
-	in := windows.DataBlob{Size: uint32(len(plain)), Data: &plain[0]}
-	var out windows.DataBlob
-	if err := windows.CryptProtectData(&in, nil, nil, 0, nil, windows.CRYPTPROTECT_UI_FORBIDDEN, &out); err != nil {
-		return nil, err
-	}
-	defer windows.LocalFree(windows.Handle(unsafe.Pointer(out.Data)))
-	return append([]byte(nil), unsafe.Slice(out.Data, out.Size)...), nil
-}
-
-func unprotect(enc []byte) ([]byte, error) {
-	if len(enc) == 0 {
-		return nil, errors.New("empty blob")
-	}
-	in := windows.DataBlob{Size: uint32(len(enc)), Data: &enc[0]}
-	var out windows.DataBlob
-	if err := windows.CryptUnprotectData(&in, nil, nil, 0, nil, windows.CRYPTPROTECT_UI_FORBIDDEN, &out); err != nil {
-		return nil, err
-	}
-	defer windows.LocalFree(windows.Handle(unsafe.Pointer(out.Data)))
-	return append([]byte(nil), unsafe.Slice(out.Data, out.Size)...), nil
-}

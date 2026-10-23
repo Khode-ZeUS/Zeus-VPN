@@ -5,7 +5,8 @@ name: Build
 on:
   push:
     branches: [main]
-    tags: ["v*"]
+    # A beta tag only publishes files from an earlier build.
+    tags: ["v*", "!v*-beta*"]
   pull_request:
   workflow_dispatch:
 

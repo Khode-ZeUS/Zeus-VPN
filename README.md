@@ -54,11 +54,11 @@ Download the file for your system, open **Zeus VPN**, sign in with your [Mozilla
 |---|---|---|
 | **Windows** 10/11 | [`ZeusVPN-amd64-installer.exe`](https://github.com/Khode-ZeUS/Zeus-VPN/releases/latest) | Installs shortcuts, and Microsoft Edge WebView2 if missing. A portable `ZeusVPN.exe` is on the same page. |
 | **Android** 7+ | [`ZeusVPN-android-arm64-v8a.apk`](https://github.com/Khode-ZeUS/Zeus-VPN/releases/latest) (most phones), `-armeabi-v7a` (older phones) or `-universal` | Allow installing apps from your browser or file manager. |
+| **Linux** x86-64 | [`zeusvpn_<version>_amd64.deb`](https://github.com/Khode-ZeUS/Zeus-VPN/releases/latest) (Ubuntu, Debian, Mint) or `ZeusVPN-linux-amd64.tar.gz` | Install with `sudo apt install ./zeusvpn_<version>_amd64.deb`. Needs WebKitGTK 4.1 (Ubuntu 22.04+, Debian 12+, Fedora 36+). |
 | **macOS** 10.15+ (Apple silicon and Intel) · *beta* | [`ZeusVPN-macos-universal.dmg`](https://github.com/Khode-ZeUS/Zeus-VPN/releases/tag/v1.1.0.0-beta) | Drag to Applications. The app is not notarized: the first time, right-click it and choose **Open** (or run `xattr -cr "/Applications/Zeus VPN.app"`). |
-| **Linux** x86-64 · *beta* | [`zeusvpn_1.1.0.0_amd64.deb` or `ZeusVPN-linux-amd64.tar.gz`](https://github.com/Khode-ZeUS/Zeus-VPN/releases/tag/v1.1.0.0-beta) | Needs WebKitGTK 4.1 (Ubuntu 22.04+, Debian 12+, Fedora 36+). |
 | **iOS / iPadOS** 15+ · *beta* | [`ZeusVPN-ios-unsigned.ipa`](https://github.com/Khode-ZeUS/Zeus-VPN/releases/tag/v1.1.0.0-beta) | Must be signed with your own Apple Developer account, see [iOS](#ios). |
 
-The macOS, Linux and iOS versions are in beta: they are built from the same code but have not been fully tested yet. If something doesn't work, please [open an issue](https://github.com/Khode-ZeUS/Zeus-VPN/issues) with the log (Settings → View logs).
+The macOS and iOS versions are in beta: they are built from the same code but have not been fully tested yet. If something doesn't work, please [open an issue](https://github.com/Khode-ZeUS/Zeus-VPN/issues) with the log (Settings → View logs).
 
 **Full VPN mode** routes every app through the VPN:
 
@@ -174,9 +174,9 @@ In Xcode, select your team for both targets (`ZeusVPN` and `PacketTunnel`). If y
 
 - **ویندوز:** فایل `ZeusVPN-amd64-installer.exe` از [آخرین نسخه](https://github.com/Khode-ZeUS/Zeus-VPN/releases/latest).
 - **اندروید:** فایل `ZeusVPN-android-arm64-v8a.apk` از [آخرین نسخه](https://github.com/Khode-ZeUS/Zeus-VPN/releases/latest) برای بیشتر گوشی‌ها (اگر مطمئن نیستید، نسخه‌ی `universal`). در اندروید همیشه حالت Full VPN فعال است و بار اول اجازه‌ی VPN پرسیده می‌شود.
-- **مک، لینوکس و iOS (بتا):** این نسخه‌ها هنوز کامل تست نشده‌اند و در [ریلیز بتا](https://github.com/Khode-ZeUS/Zeus-VPN/releases/tag/v1.1.0.0-beta) هستند. اگر مشکلی دیدید، لاگ برنامه را (Settings ← View logs) در بخش [Issues](https://github.com/Khode-ZeUS/Zeus-VPN/issues) بفرستید.
+- **لینوکس:** فایل `.deb` از [آخرین نسخه](https://github.com/Khode-ZeUS/Zeus-VPN/releases/latest) برای اوبونتو، دبیان و مینت (نصب با `sudo apt install ./zeusvpn_<version>_amd64.deb`)، یا فایل `.tar.gz` برای توزیع‌های دیگر. در حالت Full VPN رمز ادمین از طریق polkit پرسیده می‌شود.
+- **مک و iOS (بتا):** این نسخه‌ها هنوز کامل تست نشده‌اند و در [ریلیز بتا](https://github.com/Khode-ZeUS/Zeus-VPN/releases/tag/v1.1.0.0-beta) هستند. اگر مشکلی دیدید، لاگ برنامه را (Settings ← View logs) در بخش [Issues](https://github.com/Khode-ZeUS/Zeus-VPN/issues) بفرستید.
   - **مک:** فایل `ZeusVPN-macos-universal.dmg`. برنامه را به Applications بکشید. بار اول روی برنامه راست‌کلیک کنید و **Open** را بزنید (برنامه notarize نشده است). در حالت Full VPN، مک رمز ادمین را می‌پرسد.
-  - **لینوکس:** فایل `.deb` (اوبونتو، دبیان، مینت) یا `.tar.gz`. در حالت Full VPN رمز ادمین از طریق polkit پرسیده می‌شود.
   - **iOS و آیپد:** اپل فقط برنامه‌های VPN امضاشده با اکانت پولی Apple Developer را اجرا می‌کند. برای همین فایل `ipa` بدون امضا است و باید با اکانت خودتان امضا و نصب شود (توضیحات در بخش iOS بالا).
 
 کیل سوییچ فقط در ویندوز است. در سیستم‌های دیگر، حالت Full VPN هنگام قطعی کارت شبکه‌ی مجازی را نگه می‌دارد تا ترافیکی بیرون از VPN نرود. در اندروید می‌توانید از تنظیمات گوشی گزینه‌های *Always-on VPN* و *Block connections without VPN* را هم روشن کنید.

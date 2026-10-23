@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Zeus VPN
+GenericName=VPN client
+Comment=Mozilla VPN client: sign in, pick a country, connect
+Exec=zeusvpn
+Icon=zeusvpn
+Terminal=false
+Categories=Network;
+Keywords=vpn;proxy;mozilla;
+StartupWMClass=zeusvpn

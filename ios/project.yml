@@ -1,0 +1,62 @@
+# Xcode project for Zeus VPN on iOS. Generate it with XcodeGen:
+#   xcodegen generate
+# after building Frameworks/Zeuscore.xcframework (see README).
+name: ZeusVPN
+options:
+  bundleIdPrefix: com.zeusvpn
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    MARKETING_VERSION: "1.1.0"
+    CURRENT_PROJECT_VERSION: "11000"
+    SWIFT_VERSION: "5.0"
+    ENABLE_BITCODE: NO
+    # Set your Apple Developer team here (or pass DEVELOPMENT_TEAM=... to
+    # xcodebuild). Network Extensions need a paid developer account.
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    # Go's net package needs libresolv.
+    OTHER_LDFLAGS: ["-lresolv"]
+targets:
+  ZeusVPN:
+    type: application
+    platform: iOS
+    scheme: {}
+    sources:
+      - path: ZeusVPN
+      - path: Shared
+      - path: ../frontend/dist
+        type: folder
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.zeusvpn.app
+        INFOPLIST_FILE: ZeusVPN/Info.plist
+        CODE_SIGN_ENTITLEMENTS: ZeusVPN/ZeusVPN.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1,2"
+    dependencies:
+      - target: PacketTunnel
+        embed: true
+      - framework: Frameworks/Zeuscore.xcframework
+        embed: false
+      - sdk: NetworkExtension.framework
+      - sdk: WebKit.framework
+  PacketTunnel:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: PacketTunnel
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.zeusvpn.app.tunnel
+        INFOPLIST_FILE: PacketTunnel/Info.plist
+        CODE_SIGN_ENTITLEMENTS: PacketTunnel/PacketTunnel.entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"
+    dependencies:
+      - framework: Frameworks/Zeuscore.xcframework
+        embed: false
+      - sdk: NetworkExtension.framework

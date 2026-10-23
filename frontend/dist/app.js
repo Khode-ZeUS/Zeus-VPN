@@ -136,8 +136,25 @@ function renderAccounts() {
   list.innerHTML = html.join("");
 }
 
+const AUTOSTART_LABEL = { windows: "Start with Windows", macos: "Open at login", linux: "Start at login" };
+
+// Hide controls that don't exist on this platform (the mobile apps only
+// have Full VPN mode and no window buttons, and so on).
+function applyPlatform() {
+  const f = snap.features || {};
+  document.documentElement.dataset.platform = snap.platform || "windows";
+  $(".win-buttons").hidden = !f.windowControls;
+  $("#mode-switch").hidden = !f.proxyMode;
+  $("#set-killswitch").closest(".toggle-row").hidden = !f.killSwitch;
+  $("#set-autostart").closest(".toggle-row").hidden = !f.autostart;
+  $("#set-autostart").closest(".toggle-row").querySelector("b").textContent = AUTOSTART_LABEL[snap.platform] || "Start at login";
+  $("#btn-logfile").hidden = !f.logFile;
+  $("#group-protection").hidden = !f.killSwitch;
+}
+
 function render() {
   if (!snap) return;
+  applyPlatform();
   renderAccounts();
   if (!snap.loggedIn || addingAccount) {
     $("#login-cancel").hidden = !snap.loggedIn;
@@ -249,7 +266,7 @@ function render() {
   $("#set-autostart").checked = snap.autostart;
   if (document.activeElement !== $("#set-port")) $("#set-port").value = snap.settings.proxy_port;
   $("#about").innerHTML = `Zeus VPN ${esc(snap.version)} · local proxy ${esc(snap.proxyAddr || "127.0.0.1:" + snap.settings.proxy_port)}<br>Powered by Mozilla VPN · <a href="#" id="link-github">GitHub</a>`;
-  $("#link-github").onclick = (e) => { e.preventDefault(); api().OpenURL("https://github.com/Amir-Mohammd-Asadjoo/Zeus-VPN"); };
+  $("#link-github").onclick = (e) => { e.preventDefault(); api().OpenURL("https://github.com/Khode-ZeUS/Zeus-VPN"); };
 }
 
 function renderStats() {

@@ -296,3 +296,13 @@ body.connected .status-text { color: var(--green); }
 @keyframes fade { from { opacity: 0; } }
 @keyframes slide-up { from { transform: translateY(100%); } }
 @keyframes pop { from { transform: scale(0.94); opacity: 0; } }
+
+/* Mobile apps (Android, iOS): no window buttons; keep clear of the status
+   bar, notch and home indicator. */
+html.mobile .titlebar { height: calc(44px + env(safe-area-inset-top)); padding-top: env(safe-area-inset-top); --wails-draggable: none; }
+html.mobile .view { height: calc(100% - 44px - env(safe-area-inset-top)); padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
+html.mobile .scrim, html.mobile .modal { inset: 0; }
+html.mobile .sheet { top: calc(80px + env(safe-area-inset-top)); padding-bottom: env(safe-area-inset-bottom); }
+html.mobile .toast { bottom: calc(22px + env(safe-area-inset-bottom)); }
+html.mobile body { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+html.mobile input { user-select: text; -webkit-user-select: text; }

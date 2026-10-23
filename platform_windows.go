@@ -1,14 +1,21 @@
 package main
 
 import (
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 	"unsafe"
 
+	"zeusvpn/internal/appapi"
+	"zeusvpn/internal/core"
 	"zeusvpn/internal/store"
 
+	"github.com/wailsapp/wails/v2/pkg/options"
+	winopts "github.com/wailsapp/wails/v2/pkg/options/windows"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
@@ -18,6 +25,9 @@ const (
 	runKeyPath = `Software\Microsoft\Windows\CurrentVersion\Run`
 	runValue   = "ZeusVPN"
 	appTitle   = "Zeus VPN"
+
+	platformName = "windows"
+	startHint    = "\n\nMake sure Microsoft Edge WebView2 Runtime is installed."
 )
 
 var (
@@ -74,6 +84,37 @@ func showError(msg string) {
 
 func webviewDataDir() string {
 	return filepath.Join(store.Dir(), "webview")
+}
+
+func platformOptions(o *options.App) {
+	o.Windows = &winopts.Options{
+		Theme:                winopts.Dark,
+		WebviewUserDataPath:  webviewDataDir(),
+		DisablePinchZoom:     true,
+		ZoomFactor:           1.0,
+		IsZoomControlEnabled: false,
+	}
+}
+
+// runSpecialMode handles command lines that don't open the window.
+func runSpecialMode() bool { return false }
+
+func openLogFile() {
+	exec.Command("explorer.exe", "/select,", core.LogPath()).Start()
+}
+
+// restartAsAdminFunc relaunches elevated (for full VPN mode or the kill
+// switch) and connects.
+func restartAsAdminFunc(a *App) func() error {
+	return func() error {
+		if err := relaunchElevated("--connect"); err != nil {
+			return errors.New("administrator permission was not granted")
+		}
+		appapi.Shutdown(a.App)
+		releaseSingleInstance()
+		runtime.Quit(a.ctx)
+		return nil
+	}
 }
 
 // relaunchElevated starts a new elevated copy of the app via UAC.

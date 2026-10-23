@@ -27,10 +27,13 @@ jobs:
         run: |
           go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
           choco install nsis -y --no-progress
+          # Wails looks for makensis on PATH in the next step.
+          echo "C:\Program Files (x86)\NSIS" >> $env:GITHUB_PATH
       - name: Build
         run: wails build -tags with_gvisor -trimpath -ldflags "-s -w" -nsis
       - uses: actions/upload-artifact@v4
         with:
+          if-no-files-found: error
           name: windows
           path: |
             build/bin/ZeusVPN.exe
@@ -58,6 +61,7 @@ jobs:
           hdiutil create -volname "Zeus VPN" -srcfolder dmg -ov -format UDZO build/bin/ZeusVPN-macos-universal.dmg
       - uses: actions/upload-artifact@v4
         with:
+          if-no-files-found: error
           name: macos
           path: build/bin/ZeusVPN-macos-universal.dmg
 
@@ -79,6 +83,7 @@ jobs:
         run: build/linux/package.sh "$VERSION" amd64
       - uses: actions/upload-artifact@v4
         with:
+          if-no-files-found: error
           name: linux
           path: |
             build/bin/*.deb
@@ -130,6 +135,7 @@ jobs:
           ls -l out
       - uses: actions/upload-artifact@v4
         with:
+          if-no-files-found: error
           name: android
           path: out/*.apk
 
@@ -141,6 +147,8 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Build the Go library (gomobile)
+        # Normally about 2 minutes; GitHub's macOS runners sometimes stall here.
+        timeout-minutes: 15
         run: |
           go install golang.org/x/mobile/cmd/gomobile@$GOMOBILE_VERSION golang.org/x/mobile/cmd/gobind@$GOMOBILE_VERSION
           gomobile init
@@ -162,6 +170,7 @@ jobs:
           (cd out && zip -qry ZeusVPN-ios-unsigned.ipa Payload)
       - uses: actions/upload-artifact@v4
         with:
+          if-no-files-found: error
           name: ios
           path: out/ZeusVPN-ios-unsigned.ipa
 

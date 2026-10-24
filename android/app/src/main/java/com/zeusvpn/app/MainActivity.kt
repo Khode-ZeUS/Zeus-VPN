@@ -6,9 +6,12 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
+import android.util.Base64
 import android.view.WindowInsets
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
@@ -18,6 +21,7 @@ import android.webkit.WebViewClient
 import androidx.webkit.WebViewAssetLoader
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
 
@@ -133,6 +137,9 @@ class MainActivity : Activity() {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val out = JSONArray()
         val seen = HashSet<String>()
+        // Icons travel as small base64 PNGs: 48dp (capped at 128px) stays
+        // crisp in the list while keeping the whole payload light.
+        val iconSize = (resources.displayMetrics.density * 48).toInt().coerceIn(48, 128)
         val resolved = packageManager.queryIntentActivities(intent, 0)
         for (ri in resolved) {
             val pkg = ri.activityInfo?.packageName ?: continue
@@ -143,7 +150,21 @@ class MainActivity : Activity() {
             } catch (e: Exception) {
                 // fall back to the package id
             }
-            out.put(JSONObject().put("id", pkg).put("name", label))
+            val item = JSONObject().put("id", pkg).put("name", label)
+            try {
+                val drawable = ri.loadIcon(packageManager)
+                val bmp = Bitmap.createBitmap(iconSize, iconSize, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(bmp)
+                drawable.setBounds(0, 0, iconSize, iconSize)
+                drawable.draw(canvas)
+                val bos = ByteArrayOutputStream()
+                bmp.compress(Bitmap.CompressFormat.PNG, 100, bos)
+                bmp.recycle()
+                item.put("icon", Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP))
+            } catch (e: Exception) {
+                // an app without a usable icon still shows up, just plain
+            }
+            out.put(item)
         }
         // Deterministic order: label first, then package id.
         val items = ArrayList<JSONObject>()

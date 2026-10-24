@@ -11,8 +11,8 @@ android {
         applicationId = "com.zeusvpn.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 11001
-        versionName = "1.1.0.1"
+        versionCode = 11002
+        versionName = "1.1.0.2"
     }
 
     // A release keystore can be supplied through the environment (CI

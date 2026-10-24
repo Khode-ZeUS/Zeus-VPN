@@ -376,6 +376,9 @@ function renderApps() {
   list.innerHTML = rows.map((a) => `
     <label class="app-row">
       <input type="checkbox" data-app="${esc(a.id)}" ${sel.has(a.id) ? "checked" : ""}>
+      ${a.icon
+        ? `<img class="app-icon" alt="" loading="lazy" src="data:image/png;base64,${a.icon}">`
+        : '<span class="app-icon empty"></span>'}
       <span class="name"><b>${esc(a.name)}</b><small>${esc(a.id)}</small></span>
     </label>`).join("") || '<div class="list-msg">No matches</div>';
 }

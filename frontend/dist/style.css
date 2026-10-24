@@ -321,3 +321,7 @@ html.mobile input { user-select: text; -webkit-user-select: text; }
 .app-row input { width: 18px; height: 18px; flex: none; accent-color: var(--accent); }
 .app-row .name { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .app-row .name small { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* App picker rows: icon, then name and package id. */
+.app-icon { width: 34px; height: 34px; flex: none; border-radius: 9px; object-fit: contain; background: var(--surface-hover); }
+.app-icon.empty { display: inline-block; box-shadow: inset 0 0 0 1px var(--border); }

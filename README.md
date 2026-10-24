@@ -29,6 +29,7 @@
 - **Anti-filtering**: TLS ClientHello fragmentation hides server names from SNI filters (automatic when a handshake is blocked), and VPN server addresses are resolved over DNS-over-HTTPS.
 - **DNS over HTTPS** through the tunnel in Full VPN mode, so DNS lookups are not visible to or poisoned by the local network.
 - **Smart routing**: optionally keep `.ir` sites and your local network (printers, router) off the VPN.
+- **Per-app tunnelling** (Android): tunnel only the apps you choose, or everything except a few — picked from a searchable list in Settings.
 - **Live stats**: download/upload speed, exit IP and your remaining monthly data (50 GB free per month).
 - **Local HTTP + SOCKS5 proxy** on `127.0.0.1:10820` for apps that need manual proxy settings (Telegram, browsers, git, ...).
 - **Safe by design**: your previous proxy settings (for example v2rayN's) are restored on disconnect, even after a crash; sign-in tokens are encrypted (with Windows DPAPI, a key in the macOS Keychain, or a private key file on Linux and mobile).
@@ -55,8 +56,8 @@ Download the file for your system, open **Zeus VPN**, sign in with your [Mozilla
 | **Windows** 10/11 | [`ZeusVPN-amd64-installer.exe`](https://github.com/Khode-ZeUS/Zeus-VPN/releases/latest) | Installs shortcuts, and Microsoft Edge WebView2 if missing. A portable `ZeusVPN.exe` is on the same page. |
 | **Android** 7+ | [`ZeusVPN-android-arm64-v8a.apk`](https://github.com/Khode-ZeUS/Zeus-VPN/releases/latest) (most phones), `-armeabi-v7a` (older phones) or `-universal` | Allow installing apps from your browser or file manager. |
 | **Linux** x86-64 | [`zeusvpn_<version>_amd64.deb`](https://github.com/Khode-ZeUS/Zeus-VPN/releases/latest) (Ubuntu, Debian, Mint) or `ZeusVPN-linux-amd64.tar.gz` | Install with `sudo apt install ./zeusvpn_<version>_amd64.deb`. Needs WebKitGTK 4.1 (Ubuntu 22.04+, Debian 12+, Fedora 36+). |
-| **macOS** 10.15+ (Apple silicon and Intel) · *beta* | [`ZeusVPN-macos-universal.dmg`](https://github.com/Khode-ZeUS/Zeus-VPN/releases/tag/v1.1.0.0-beta) | Drag to Applications. The app is not notarized: the first time, right-click it and choose **Open** (or run `xattr -cr "/Applications/Zeus VPN.app"`). |
-| **iOS / iPadOS** 15+ · *beta* | [`ZeusVPN-ios-unsigned.ipa`](https://github.com/Khode-ZeUS/Zeus-VPN/releases/tag/v1.1.0.0-beta) | Must be signed with your own Apple Developer account, see [iOS](#ios). |
+| **macOS** 10.15+ (Apple silicon and Intel) · *beta* | [`ZeusVPN-macos-universal.dmg`](https://github.com/Khode-ZeUS/Zeus-VPN/releases/latest) | Drag to Applications. The app is not notarized: the first time, right-click it and choose **Open** (or run `xattr -cr "/Applications/Zeus VPN.app"`). |
+| **iOS / iPadOS** 15+ · *beta* | [`ZeusVPN-ios-unsigned.ipa`](https://github.com/Khode-ZeUS/Zeus-VPN/releases/latest) | Must be signed with your own Apple Developer account, see [iOS](#ios). |
 
 The macOS and iOS versions are in beta: they are built from the same code but have not been fully tested yet. If something doesn't work, please [open an issue](https://github.com/Khode-ZeUS/Zeus-VPN/issues) with the log (Settings → View logs).
 
@@ -65,6 +66,10 @@ The macOS and iOS versions are in beta: they are built from the same code but ha
 - **Windows**: needs administrator rights to create the network adapter; Zeus VPN asks to restart itself as administrator.
 - **macOS and Linux**: the app stays a normal app. When you connect in Full VPN mode it asks for your administrator password and starts a small helper that runs the adapter (on Linux through polkit/`pkexec`).
 - **Android and iOS**: always Full VPN, through the system VPN permission (asked once). The local proxy `127.0.0.1:10820` also works for other apps.
+
+The VPN server's own addresses are excluded from the adapter's routes on every platform, so the engine's tunnel connection always goes out through the physical network and cannot loop back into the tunnel it is carrying.
+
+**Per-app tunnelling** (Android): in Settings → *Full VPN apps*, choose *Selected only* to tunnel just the apps you pick, or *Except selected* to tunnel everything but a few (banking apps, local services, …). Other platforms route all apps: iOS per-app VPN needs MDM profiles, and the desktop TUN stack has no per-app filter.
 
 The kill switch is Windows-only. On the other systems Full VPN mode keeps the adapter up while it reconnects, so traffic does not leave outside the tunnel; on Android you can also turn on *Always-on VPN* and *Block connections without VPN* in the system settings.
 
@@ -166,6 +171,7 @@ In Xcode, select your team for both targets (`ZeusVPN` and `PacketTunnel`). If y
 - **چند اکانت**: می‌توانید چند اکانت موزیلا اضافه کنید (تنظیمات ← Add another account). وقتی حجم یکی تمام شود، برنامه خودش بدون قطع شدن اتصال به اکانت بعدی سوییچ می‌کند.
 - **کیل سوییچ (Kill switch)**: اگر VPN قطع شود، اینترنت کل سیستم قطع می‌شود تا وقتی که VPN دوباره وصل شود یا خودتان آن را خاموش کنید؛ پس هیچ ترافیکی بیرون از VPN رد نمی‌شود. از تنظیمات فعال می‌شود و دسترسی ادمین لازم دارد.
 - **ضد فیلترینگ**: اگر فیلترینگ اتصال به سرورها را ببندد، برنامه خودش TLS را تکه‌تکه (fragment) می‌فرستد تا اسم سرور (SNI) دیده نشود.
+- **تونل انتخابی اپ‌ها (اندروید)**: از تنظیمات ← Full VPN apps می‌توانید فقط اپ‌های انتخابی از VPN رد شوند (یا همه به‌جز چند اپ خاص، مثلاً برنامه‌ی بانکی).
 - سایت‌های `.ir` به‌صورت پیش‌فرض مستقیم باز می‌شوند (قابل تغییر در تنظیمات).
 - DNS در حالت Full VPN از داخل تونل و به‌صورت رمزنگاری‌شده (DoH) انجام می‌شود، پس آلودگی DNS مشکلی ایجاد نمی‌کند.
 - برای برنامه‌هایی مثل تلگرام می‌توانید پروکسی `127.0.0.1:10820` (HTTP یا SOCKS5) را دستی تنظیم کنید.
@@ -175,7 +181,7 @@ In Xcode, select your team for both targets (`ZeusVPN` and `PacketTunnel`). If y
 - **ویندوز:** فایل `ZeusVPN-amd64-installer.exe` از [آخرین نسخه](https://github.com/Khode-ZeUS/Zeus-VPN/releases/latest).
 - **اندروید:** فایل `ZeusVPN-android-arm64-v8a.apk` از [آخرین نسخه](https://github.com/Khode-ZeUS/Zeus-VPN/releases/latest) برای بیشتر گوشی‌ها (اگر مطمئن نیستید، نسخه‌ی `universal`). در اندروید همیشه حالت Full VPN فعال است و بار اول اجازه‌ی VPN پرسیده می‌شود.
 - **لینوکس:** فایل `.deb` از [آخرین نسخه](https://github.com/Khode-ZeUS/Zeus-VPN/releases/latest) برای اوبونتو، دبیان و مینت (نصب با `sudo apt install ./zeusvpn_<version>_amd64.deb`)، یا فایل `.tar.gz` برای توزیع‌های دیگر. در حالت Full VPN رمز ادمین از طریق polkit پرسیده می‌شود.
-- **مک و iOS (بتا):** این نسخه‌ها هنوز کامل تست نشده‌اند و در [ریلیز بتا](https://github.com/Khode-ZeUS/Zeus-VPN/releases/tag/v1.1.0.0-beta) هستند. اگر مشکلی دیدید، لاگ برنامه را (Settings ← View logs) در بخش [Issues](https://github.com/Khode-ZeUS/Zeus-VPN/issues) بفرستید.
+- **مک و iOS (بتا):** این نسخه‌ها هنوز کامل تست نشده‌اند؛ فایل‌هایشان در [آخرین نسخه](https://github.com/Khode-ZeUS/Zeus-VPN/releases/latest) کنار بقیه‌ی پلتفرم‌ها است. اگر مشکلی دیدید، لاگ برنامه را (Settings ← View logs) در بخش [Issues](https://github.com/Khode-ZeUS/Zeus-VPN/issues) بفرستید.
   - **مک:** فایل `ZeusVPN-macos-universal.dmg`. برنامه را به Applications بکشید. بار اول روی برنامه راست‌کلیک کنید و **Open** را بزنید (برنامه notarize نشده است). در حالت Full VPN، مک رمز ادمین را می‌پرسد.
   - **iOS و آیپد:** اپل فقط برنامه‌های VPN امضاشده با اکانت پولی Apple Developer را اجرا می‌کند. برای همین فایل `ipa` بدون امضا است و باید با اکانت خودتان امضا و نصب شود (توضیحات در بخش iOS بالا).
 

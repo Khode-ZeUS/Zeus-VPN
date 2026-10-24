@@ -42,6 +42,10 @@ type Config struct {
 	// ProxyAddr is the app's local HTTP + SOCKS5 proxy.
 	ProxyAddr string
 	BypassLAN bool
+	// Protect/ProtectPort name the VPN server: its addresses stay off the
+	// helper's routes so the app's own tunnel connection cannot loop.
+	Protect     []netip.Addr
+	ProtectPort int
 	// OnExit is called if the helper stops without being asked to.
 	OnExit func()
 }
@@ -71,6 +75,12 @@ func Launch(cfg Config, logf func(string)) (*Helper, error) {
 	rand.Read(tok)
 	token := hex.EncodeToString(tok)
 	args := []string{Flag, "--ctrl", ln.Addr().String(), "--token", token, "--proxy", cfg.ProxyAddr, "--parent", strconv.Itoa(os.Getpid())}
+	for _, a := range cfg.Protect {
+		args = append(args, "--protect", a.String())
+	}
+	if cfg.ProtectPort > 0 {
+		args = append(args, "--protect-port", strconv.Itoa(cfg.ProtectPort))
+	}
 	if cfg.BypassLAN {
 		args = append(args, "--bypass-lan")
 	}
@@ -187,6 +197,9 @@ func Run(args []string) int {
 	proxy := fs.String("proxy", "", "")
 	parent := fs.Int("parent", 0, "")
 	bypassLAN := fs.Bool("bypass-lan", false, "")
+	var protect []netip.Addr
+	fs.Var(&addrList{&protect}, "protect", "VPN server address to keep off the routes")
+	protectPort := fs.Int("protect-port", 0, "")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -222,10 +235,12 @@ func Run(args []string) int {
 	}
 	defer mon.Close()
 	v, err := vpn.Start(mon, vpn.Options{
-		Dial:       socksDialer(*proxy),
-		Forward:    httpForwarder(*proxy),
-		ExcludeLAN: *bypassLAN,
-		Log:        func(s string) { send("log " + s) },
+		Dial:        socksDialer(*proxy),
+		Forward:     httpForwarder(*proxy),
+		ExcludeLAN:  *bypassLAN,
+		Protect:     protect,
+		ProtectPort: *protectPort,
+		Log:         func(s string) { send("log " + s) },
 	})
 	if err != nil {
 		send("error " + err.Error())
@@ -346,4 +361,18 @@ func httpForwarder(proxy string) func(*http.Request) (*http.Response, error) {
 	u := &url.URL{Scheme: "http", Host: proxy}
 	tr := &http.Transport{Proxy: http.ProxyURL(u), DisableCompression: true, IdleConnTimeout: 30 * time.Second}
 	return tr.RoundTrip
+}
+
+// addrList collects repeated --protect flags into a netip.Addr slice.
+type addrList struct{ dst *[]netip.Addr }
+
+func (l addrList) String() string { return "" }
+
+func (l addrList) Set(s string) error {
+	a, err := netip.ParseAddr(s)
+	if err != nil {
+		return err
+	}
+	*l.dst = append(*l.dst, a)
+	return nil
 }

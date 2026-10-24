@@ -7,6 +7,7 @@ package appapi
 import (
 	"errors"
 	"reflect"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -27,6 +28,9 @@ type Platform struct {
 	RestartAsAdmin func() error
 	OpenURL        func(string)
 	OpenLogFile    func()
+	// ListApps enumerates the installed apps for per-app tunnelling
+	// (Android); nil where the platform cannot filter by app.
+	ListApps func() []AppItem
 	// External runs the connection in another process (the iOS network
 	// extension), which reports back through SetExternalState.
 	External External
@@ -44,6 +48,13 @@ type Features struct {
 	Autostart      bool `json:"autostart"`
 	LogFile        bool `json:"logFile"`
 	WindowControls bool `json:"windowControls"`
+	AppFilter      bool `json:"appFilter"`
+}
+
+// AppItem is one installed app in the per-app tunnel picker.
+type AppItem struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // App is the API exposed to the frontend. Its exported methods are the
@@ -99,7 +110,7 @@ type CountryDTO struct {
 
 // Version is the app version shown in the UI (keep in sync with wails.json
 // and the mobile projects).
-const Version = "1.1.0.0"
+const Version = "1.1.0.1"
 
 // Startup creates the engine; emit delivers events ("state", "stats",
 // "log", "notice") to the UI.
@@ -216,7 +227,20 @@ func (a *App) features() Features {
 		Autostart:      a.plat.SetAutostart != nil,
 		LogFile:        a.plat.OpenLogFile != nil,
 		WindowControls: desktop,
+		// Only Android's VPN API can capture individual apps; per-app VPN
+		// on iOS needs MDM, and the desktop TUN stack has no per-app filter.
+		AppFilter: a.plat.Name == "android",
 	}
+}
+
+// GetApps lists the installed apps for the per-app tunnel picker (empty
+// where unsupported; the Android app answers this call natively before it
+// reaches Go).
+func (a *App) GetApps() []AppItem {
+	if a.plat.ListApps != nil {
+		return a.plat.ListApps()
+	}
+	return []AppItem{}
 }
 
 func (a *App) GetSnapshot() Snapshot {
@@ -390,7 +414,18 @@ func (a *App) SaveSettings(s store.Settings) error {
 	if s.ProxyPort < 1024 || s.ProxyPort > 65535 {
 		return errors.New("port must be between 1024 and 65535")
 	}
-	changed := s.ProxyPort != cur.ProxyPort || s.BypassIran != cur.BypassIran || s.BypassLAN != cur.BypassLAN || s.TLSSplit != cur.TLSSplit
+	switch s.AppTunnelMode {
+	case store.AppTunnelInclude, store.AppTunnelExclude:
+		if len(s.Apps) == 0 {
+			s.AppTunnelMode = store.AppTunnelAll
+			s.Apps = nil
+		}
+	default:
+		s.AppTunnelMode = store.AppTunnelAll
+		s.Apps = nil
+	}
+	appsChanged := s.AppTunnelMode != cur.AppTunnelMode || !slices.Equal(s.Apps, cur.Apps)
+	changed := s.ProxyPort != cur.ProxyPort || s.BypassIran != cur.BypassIran || s.BypassLAN != cur.BypassLAN || s.TLSSplit != cur.TLSSplit || appsChanged
 	if s.KillSwitch && !cur.KillSwitch && killswitch.Supported && !core.IsElevated() {
 		// Saved anyway; the next connect offers to restart as administrator.
 		defer a.emit("notice", "The kill switch needs administrator rights. Zeus VPN will ask to restart as administrator when you connect.")

@@ -15,6 +15,11 @@ import (
 const (
 	ModeProxy = "proxy"
 	ModeTUN   = "tun"
+
+	// App tunnel selection (Full VPN on Android).
+	AppTunnelAll     = "all"     // every app through the VPN (default)
+	AppTunnelInclude = "include" // only the selected apps
+	AppTunnelExclude = "exclude" // everything except the selected apps
 )
 
 type Settings struct {
@@ -28,12 +33,16 @@ type Settings struct {
 	AutoSwitch  bool   `json:"auto_switch"`
 	TLSSplit    string `json:"tls_split"`
 	KillSwitch  bool   `json:"kill_switch"`
+	// AppTunnelMode picks which apps Full VPN captures (Android only);
+	// Apps lists Android package names in include/exclude modes.
+	AppTunnelMode string   `json:"app_tunnel_mode"`
+	Apps          []string `json:"apps"`
 	// Email is only read to migrate single-account installs.
 	Email string `json:"email,omitempty"`
 }
 
 func DefaultSettings() Settings {
-	return Settings{Mode: ModeProxy, ProxyPort: 10820, BypassIran: true, BypassLAN: true, AutoSwitch: true, TLSSplit: "auto"}
+	return Settings{Mode: ModeProxy, ProxyPort: 10820, BypassIran: true, BypassLAN: true, AutoSwitch: true, TLSSplit: "auto", AppTunnelMode: AppTunnelAll}
 }
 
 // Account is one Mozilla account with its sign-in and last known data quota.
@@ -139,6 +148,12 @@ func LoadSettings() Settings {
 	}
 	if s.ProxyPort <= 0 || s.ProxyPort > 65535 {
 		s.ProxyPort = 10820
+	}
+	switch s.AppTunnelMode {
+	case AppTunnelInclude, AppTunnelExclude:
+	default:
+		s.AppTunnelMode = AppTunnelAll
+		s.Apps = nil
 	}
 	return s
 }

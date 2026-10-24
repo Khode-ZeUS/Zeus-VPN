@@ -136,6 +136,16 @@ func (u *Upstream) Retarget(ctx context.Context, host string, port int) error {
 
 func (u *Upstream) SetToken(token string) { u.token.Store(&token) }
 
+// Addrs returns the VPN server's current addresses. In TUN mode they are
+// kept off the virtual adapter's routes: the app's own connection to the
+// server must leave through the physical network, never through the tunnel
+// it is carrying (that would loop).
+func (u *Upstream) Addrs() []netip.Addr {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return append([]netip.Addr(nil), u.addrs...)
+}
+
 // Warmup establishes the first session so connection problems surface
 // before we claim to be connected.
 func (u *Upstream) Warmup(ctx context.Context) error {

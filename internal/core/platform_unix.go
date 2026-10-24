@@ -45,7 +45,10 @@ func (t *helperTun) Prepare() error {
 
 func (t *helperTun) Start(cfg TunConfig) error {
 	onExit := func() { cfg.OnFail(errors.New("the Full VPN helper stopped unexpectedly")) }
-	h, err := tunhelper.Launch(tunhelper.Config{ProxyAddr: cfg.ProxyAddr, BypassLAN: cfg.BypassLAN, OnExit: onExit}, cfg.Log)
+	h, err := tunhelper.Launch(tunhelper.Config{
+		ProxyAddr: cfg.ProxyAddr, BypassLAN: cfg.BypassLAN,
+		Protect: cfg.Protect, ProtectPort: cfg.ProtectPort, OnExit: onExit,
+	}, cfg.Log)
 	if err != nil {
 		return err
 	}

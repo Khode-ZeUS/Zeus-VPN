@@ -117,10 +117,31 @@ class MainActivity : Activity() {
         val args = msg.optJSONArray("args") ?: JSONArray()
         try {
             if (method == "Connect" && !ensureVpnPermission()) throw IllegalStateException("VPN permission was not granted")
+            // The app list lives on the Android side, not in Go.
+            if (method == "GetApps") return resolve(id, true, installedApps().toString())
             resolve(id, true, Core.call(method, args.toString()))
         } catch (e: Exception) {
             resolve(id, false, e.message ?: e.toString())
         }
+    }
+
+    /** Installed launchable apps for the per-app tunnel picker. */
+    private fun installedApps(): JSONArray {
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val out = JSONArray()
+        val seen = sortedSetOf<String>()
+        for (ri in packageManager.queryIntentActivities(intent, 0)) {
+            val pkg = ri.activityInfo?.packageName ?: continue
+            if (pkg == packageName || !seen.add(pkg)) continue
+            val label = runCatching { ri.loadLabel(packageManager).toString() }.getOrNull() ?: pkg
+            out.put(JSONObject().put("id", pkg).put("name", label))
+        }
+        // Deterministic order: label first, then package id.
+        val arr = (0 until out.length()).map { out.optJSONObject(it)!! }
+            .sortedWith(compareBy({ it.optString("name").lowercase() }, { it.optString("id") }))
+        val sorted = JSONArray()
+        for (o in arr) sorted.put(o)
+        return sorted
     }
 
     /** Asks for the VPN permission if needed; blocks a worker thread. */

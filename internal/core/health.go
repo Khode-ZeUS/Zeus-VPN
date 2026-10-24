@@ -139,6 +139,15 @@ func (e *Engine) failover(ctx context.Context) {
 		e.Log("warning", "could not switch server: "+err.Error())
 		return
 	}
+	// Keep the loop protection pointed at the new server.
+	e.mu.Lock()
+	tun := e.tun
+	e.mu.Unlock()
+	if tun != nil {
+		if rp, ok := tun.(RouteProtector); ok {
+			rp.UpdateProtected(up.Addrs(), ep.Port)
+		}
+	}
 	e.Log("info", fmt.Sprintf("trying another server: %s (%s)", ep.Addr(), ep.CityName))
 	e.update(func(s *State) {
 		s.Server = &ServerInfo{CountryCode: ep.CountryCode, CountryName: ep.CountryName, CityName: ep.CityName, Host: ep.Host}

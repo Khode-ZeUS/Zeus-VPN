@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.net.IpPrefix
 import android.net.VpnService
@@ -128,11 +129,43 @@ class ZeusVpnService : VpnService() {
             .addDnsServer(cfg.getString("dns"))
             .addRoute("0.0.0.0", 0)
             .addRoute("::", 0)
-            .addDisallowedApplication(packageName)
             .setConfigureIntent(openAppIntent())
         if (Build.VERSION.SDK_INT >= 29) b.setMetered(false)
+
+        // Per-app tunnelling: "include" captures only the chosen apps,
+        // "exclude" captures everything but them (plus this app, whose own
+        // connection to the VPN server must always stay direct).
+        val apps = cfg.optJSONArray("apps")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty()
+        var added = 0
+        when (cfg.optString("tunnelMode", "all")) {
+            "include" -> for (pkg in apps) {
+                // Skip apps that are no longer installed instead of failing.
+                try { b.addApplication(pkg); added++ } catch (_: PackageManager.NameNotFoundException) {}
+                // Zeus itself is deliberately never added: its own upstream
+                // connection must go out directly.
+            }
+            "exclude" -> {
+                b.addDisallowedApplication(packageName)
+                for (pkg in apps) {
+                    try { b.addDisallowedApplication(pkg); added++ } catch (_: PackageManager.NameNotFoundException) {}
+                }
+            }
+            else -> b.addDisallowedApplication(packageName)
+        }
+        // An empty allow-list would silently tunnel every app instead.
+        if (cfg.optString("tunnelMode", "all") != "all" && added == 0) {
+            throw IllegalStateException("none of the selected apps is installed")
+        }
+
         if (cfg.optBoolean("bypassLan") && Build.VERSION.SDK_INT >= 33) {
             for ((addr, len) in LAN) b.excludeRoute(IpPrefix(InetAddress.getByName(addr), len))
+        }
+        // Keep the VPN server itself off the tunnel (loop protection).
+        if (Build.VERSION.SDK_INT >= 33) {
+            val protect = cfg.optJSONArray("protect") ?: null
+            for (i in 0 until (protect?.length() ?: 0)) {
+                runCatching { b.excludeRoute(IpPrefix(InetAddress.getByName(protect!!.optString(i)), 32)) }
+            }
         }
         val pfd = b.establish() ?: throw IllegalStateException("VPN permission was not granted")
         return pfd.detachFd()

@@ -146,6 +146,15 @@
       <div class="group-label">Routing</div>
       <label class="toggle-row"><span><b>Bypass Iranian sites</b><small>.ir domains connect directly</small></span><input type="checkbox" id="set-bypass-ir"><i></i></label>
       <label class="toggle-row"><span><b>Bypass local network</b><small>Printers, routers and LAN stay direct</small></span><input type="checkbox" id="set-bypass-lan"><i></i></label>
+      <div class="group-label" id="group-appfilter" hidden>Full VPN apps</div>
+      <div class="app-filter" id="app-filter" hidden>
+        <div class="seg3" id="set-apptunnel">
+          <button data-mode="all">All apps</button>
+          <button data-mode="include">Selected only</button>
+          <button data-mode="exclude">Except selected</button>
+        </div>
+        <button class="btn ghost" id="btn-choose-apps"><svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M11 18h2"/></svg>Choose apps <span class="apps-count" id="apps-count"></span></button>
+      </div>
       <div class="group-label">Anti-filtering</div>
       <div class="input-row"><span><b>TLS fragmentation</b><small>Hides server names from SNI filtering</small></span>
         <select id="set-tls-split">
@@ -166,6 +175,15 @@
       </div>
       <p class="about muted small" id="about"></p>
     </div>
+  </section>
+
+  <section class="sheet" id="sheet-apps" hidden>
+    <div class="sheet-head">
+      <h3>Choose apps</h3>
+      <button class="icon-btn" data-close title="Done"><svg viewBox="0 0 24 24"><path d="m5 13 4 4L19 7"/></svg></button>
+    </div>
+    <label class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="app-search" placeholder="Search apps"></label>
+    <div class="server-list" id="app-list"></div>
   </section>
 
   <section class="sheet" id="sheet-logs" hidden>

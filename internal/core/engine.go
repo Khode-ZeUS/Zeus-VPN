@@ -414,10 +414,23 @@ func (e *Engine) connect(ctx context.Context, st store.Settings) error {
 			e.notify("Full VPN stopped: " + err.Error())
 			go e.Disconnect()
 		}
-		if err := tun.Start(TunConfig{Dial: up.Dial, Forward: forward, ProxyAddr: mixed.Addr(), BypassIran: st.BypassIran, BypassLAN: st.BypassLAN, Log: e.logRaw, OnFail: onFail}); err != nil {
+		cfg := TunConfig{
+			Dial: up.Dial, Forward: forward, ProxyAddr: mixed.Addr(),
+			BypassIran: st.BypassIran, BypassLAN: st.BypassLAN,
+			Protect: up.Addrs(), ProtectPort: ep.Port,
+			AppTunnelMode: st.AppTunnelMode, Apps: st.Apps,
+			Log: e.logRaw, OnFail: onFail,
+		}
+		if err := tun.Start(cfg); err != nil {
 			return err
 		}
-		e.Log("info", "full VPN mode active: all system traffic is tunneled")
+		if cfg.AppTunnelMode == store.AppTunnelInclude {
+			e.Log("info", fmt.Sprintf("full VPN mode active: tunnelling only the selected apps (%d)", len(cfg.Apps)))
+		} else if cfg.AppTunnelMode == store.AppTunnelExclude {
+			e.Log("info", fmt.Sprintf("full VPN mode active: all traffic is tunneled except the selected apps (%d)", len(cfg.Apps)))
+		} else {
+			e.Log("info", "full VPN mode active: all system traffic is tunneled")
+		}
 	} else {
 		if err := sysproxy.Enable(mixed.Addr(), st.BypassIran, st.BypassLAN); err != nil {
 			return fmt.Errorf("could not set the system proxy: %w", err)

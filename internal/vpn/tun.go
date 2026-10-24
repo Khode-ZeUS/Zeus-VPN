@@ -16,6 +16,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"zeusvpn/internal/netx"
@@ -118,7 +120,17 @@ type Options struct {
 	MTU int
 	// ExcludeLAN keeps private networks off the auto-routes.
 	ExcludeLAN bool
-	Log        func(string)
+	// Protect lists the VPN server's addresses (with ProtectPort). They stay
+	// off the adapter's routes so the app's own connection to the server
+	// always leaves through the physical network: socket binding alone has
+	// proved not enough on Windows, and a captured connection loops forever
+	// (the tunnel dial itself is re-captured, again and again).
+	Protect []netip.Addr
+	// ProtectPort is the VPN server's port; a connection to Protect:Port
+	// arriving through the adapter is refused on the spot instead of being
+	// tunneled through the server it is addressed to.
+	ProtectPort int
+	Log         func(string)
 }
 
 type VPN struct {
@@ -126,6 +138,13 @@ type VPN struct {
 	stack  tun.Stack
 	dns    *DoH
 	cancel context.CancelFunc
+
+	// Route-update state for UpdateProtect (failover moves the server).
+	handler *handler
+	tunOpts tun.Options
+	baseEx4 []netip.Prefix
+	baseEx6 []netip.Prefix
+	mu      sync.Mutex
 }
 
 var privateRanges = []netip.Prefix{
@@ -144,13 +163,33 @@ var linkLocalRanges = []netip.Prefix{
 	netip.MustParsePrefix("255.255.255.255/32"),
 }
 
+var linkLocal6Ranges = []netip.Prefix{
+	netip.MustParsePrefix("fe80::/10"),
+	netip.MustParsePrefix("ff00::/8"),
+}
+
+// protectPrefixes splits protected addresses into host routes per family.
+func protectPrefixes(addrs []netip.Addr) (v4, v6 []netip.Prefix) {
+	for _, a := range addrs {
+		a = a.Unmap()
+		if a.Is4() {
+			v4 = append(v4, netip.PrefixFrom(a, a.BitLen()))
+		} else if a.Is6() {
+			v6 = append(v6, netip.PrefixFrom(a, a.BitLen()))
+		}
+	}
+	return
+}
+
 // Start creates the adapter (or adopts opts.FD) and starts the stack. b is
 // the interface monitor for auto-routing; it is unused (and may be nil) with
 // opts.FD.
 func Start(b *Binding, opts Options) (*VPN, error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	v := &VPN{cancel: cancel, dns: NewDoH(opts.Dial)}
+	v := &VPN{cancel: cancel, dns: NewDoH(opts.Dial), baseEx4: privateRanges, baseEx6: linkLocal6Ranges}
 	h := &handler{ctx: ctx, opts: opts, dns: v.dns}
+	h.setGuard(opts.Protect, opts.ProtectPort)
+	v.handler = h
 
 	tunOpts := tun.Options{
 		Name:                    InterfaceName,
@@ -189,6 +228,11 @@ func Start(b *Binding, opts Options) (*VPN, error) {
 		} else {
 			tunOpts.Inet4RouteExcludeAddress = linkLocalRanges
 		}
+		v.baseEx4 = tunOpts.Inet4RouteExcludeAddress
+		// Keep the VPN server itself off the tunnel routes (see Options.Protect).
+		p4, p6 := protectPrefixes(opts.Protect)
+		tunOpts.Inet4RouteExcludeAddress = append(append([]netip.Prefix(nil), v.baseEx4...), p4...)
+		tunOpts.Inet6RouteExcludeAddress = append(append([]netip.Prefix(nil), v.baseEx6...), p6...)
 		tunOpts.InterfaceFinder = b.finder
 		tunOpts.InterfaceMonitor = b.ifMon
 		finder = b.finder
@@ -223,8 +267,27 @@ func Start(b *Binding, opts Options) (*VPN, error) {
 		cancel()
 		return nil, fmt.Errorf("could not set VPN routes: %w", err)
 	}
-	v.tunIf, v.stack = tunIf, stack
+	v.tunIf, v.stack, v.tunOpts = tunIf, stack, tunOpts
 	return v, nil
+}
+
+// UpdateProtect re-points the route exclusions and the loop guard at a new
+// VPN server (failover). A no-op when the host app owns the routes (FD mode).
+func (v *VPN) UpdateProtect(addrs []netip.Addr, port int) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.tunIf == nil || v.tunOpts.FileDescriptor != 0 || !v.tunOpts.AutoRoute {
+		return
+	}
+	if v.handler != nil {
+		v.handler.setGuard(addrs, port)
+	}
+	p4, p6 := protectPrefixes(addrs)
+	v.tunOpts.Inet4RouteExcludeAddress = append(append([]netip.Prefix(nil), v.baseEx4...), p4...)
+	v.tunOpts.Inet6RouteExcludeAddress = append(append([]netip.Prefix(nil), v.baseEx6...), p6...)
+	if err := v.tunIf.UpdateRouteOptions(v.tunOpts); err != nil {
+		return // the old exclusions stay; the guard still stops any loop
+	}
 }
 
 // LUID identifies the virtual adapter (for firewall rules).
@@ -242,16 +305,52 @@ func (v *VPN) Name() string {
 }
 
 func (v *VPN) Close() {
+	v.mu.Lock()
+	tunIf, stack := v.tunIf, v.stack
+	v.tunIf, v.stack = nil, nil
+	v.mu.Unlock()
 	v.cancel()
-	v.stack.Close()
-	v.tunIf.Close()
+	if stack != nil {
+		stack.Close()
+	}
+	if tunIf != nil {
+		tunIf.Close()
+	}
 	v.dns.Close()
 }
 
+// guardSet is the immutable snapshot of the VPN server's endpoint used to
+// refuse connections that would tunnel the server through itself.
+type guardSet struct {
+	addrs map[string]struct{}
+	port  int
+}
+
 type handler struct {
-	ctx  context.Context
-	opts Options
-	dns  *DoH
+	ctx   context.Context
+	opts  Options
+	dns   *DoH
+	guard atomic.Pointer[guardSet]
+}
+
+func (h *handler) setGuard(addrs []netip.Addr, port int) {
+	g := &guardSet{addrs: make(map[string]struct{}, len(addrs)), port: port}
+	for _, a := range addrs {
+		g.addrs[a.Unmap().String()] = struct{}{}
+	}
+	h.guard.Store(g)
+}
+
+// guarded reports whether the destination is the VPN server itself: such a
+// connection arriving through the adapter means our own upstream dial was
+// captured, and tunneling it would recurse forever.
+func (h *handler) guarded(dst M.Socksaddr) bool {
+	g := h.guard.Load()
+	if g == nil || g.port == 0 || dst.Port != uint16(g.port) || !dst.Addr.IsValid() {
+		return false
+	}
+	_, ok := g.addrs[dst.Addr.Unmap().String()]
+	return ok
 }
 
 func (h *handler) JudgeFlow(network uint8, source, destination netip.AddrPort, firstPacket []byte) tun.FlowVerdict {
@@ -295,6 +394,12 @@ func (h *handler) NewConnectionEx(ctx context.Context, conn net.Conn, source, de
 }
 
 func (h *handler) handleTCP(conn net.Conn, dst M.Socksaddr) error {
+	if h.guarded(dst) {
+		// Our own connection to the VPN server got captured; tunneling it
+		// would loop. Refuse immediately so the dial fails fast instead of
+		// hanging until its timeout.
+		return errors.New("connection to the VPN server refused: routing loop protection")
+	}
 	port := dst.Port
 	domain, early := sniff(conn, port)
 	host := dst.Addr.Unmap().String()

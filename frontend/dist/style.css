@@ -306,3 +306,18 @@ html.mobile .sheet { top: calc(80px + env(safe-area-inset-top)); padding-bottom:
 html.mobile .toast { bottom: calc(22px + env(safe-area-inset-bottom)); }
 html.mobile body { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
 html.mobile input { user-select: text; -webkit-user-select: text; }
+
+/* Per-app tunnelling (Full VPN apps) */
+.app-filter { display: flex; flex-direction: column; }
+.seg3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; padding: 4px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); }
+.seg3 button { height: 34px; border-radius: 9px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.seg3 button:hover { color: var(--text); }
+.seg3 button.active { background: rgba(124, 92, 255, 0.22); border: 1px solid rgba(124, 92, 255, 0.4); color: var(--text); }
+#btn-choose-apps { margin-top: 8px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; }
+#btn-choose-apps svg { width: 16px; height: 16px; }
+#btn-choose-apps .apps-count { color: var(--muted); }
+.app-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.app-row:active { background: var(--surface-hover); }
+.app-row input { width: 18px; height: 18px; flex: none; accent-color: var(--accent); }
+.app-row .name { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.app-row .name small { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

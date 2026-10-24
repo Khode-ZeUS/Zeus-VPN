@@ -51,17 +51,30 @@ private final class TunnelHost: NSObject, ZeuscoreHostProtocol {
         let v4 = NEIPv4Settings(addresses: [cfg["address4"] as? String ?? "172.19.0.1"],
                                 subnetMasks: [Self.mask(cfg["prefix4"] as? Int ?? 30)])
         v4.includedRoutes = [NEIPv4Route.default()]
+        var excluded4: [NEIPv4Route] = []
         if cfg["bypassLan"] as? Bool == true {
-            v4.excludedRoutes = [
+            excluded4 += [
                 NEIPv4Route(destinationAddress: "10.0.0.0", subnetMask: "255.0.0.0"),
                 NEIPv4Route(destinationAddress: "192.168.0.0", subnetMask: "255.255.0.0"),
                 NEIPv4Route(destinationAddress: "169.254.0.0", subnetMask: "255.255.0.0"),
             ]
         }
+        var excluded6: [NEIPv6Route] = []
+        // Keep the VPN server itself off the tunnel: the engine's own
+        // connection must not loop back inside the tunnel it is carrying.
+        for case let ip as String in (cfg["protect"] as? [Any]) ?? [] {
+            if ip.contains(":") {
+                excluded6.append(NEIPv6Route(destinationAddress: ip, networkPrefixLength: 128))
+            } else {
+                excluded4.append(NEIPv4Route(destinationAddress: ip, subnetMask: "255.255.255.255"))
+            }
+        }
+        v4.excludedRoutes = excluded4
         settings.ipv4Settings = v4
         let v6 = NEIPv6Settings(addresses: [cfg["address6"] as? String ?? "fdfe:dcba:9876::1"],
                                 networkPrefixLengths: [NSNumber(value: cfg["prefix6"] as? Int ?? 126)])
         v6.includedRoutes = [NEIPv6Route.default()]
+        v6.excludedRoutes = excluded6
         settings.ipv6Settings = v6
         let dns = NEDNSSettings(servers: [cfg["dns"] as? String ?? "172.19.0.2"])
         dns.matchDomains = [""]

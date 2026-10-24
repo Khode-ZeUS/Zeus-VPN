@@ -53,6 +53,13 @@ type tunConfig struct {
 	DNS       string `json:"dns"`
 	MTU       int    `json:"mtu"`
 	BypassLAN bool   `json:"bypassLan"`
+	// TunnelMode ("all", "include", "exclude") and Apps (package names)
+	// select which apps the system VPN captures (Android only).
+	TunnelMode string   `json:"tunnelMode"`
+	Apps       []string `json:"apps"`
+	// Protect lists the VPN server's addresses; the host keeps them off the
+	// VPN routes so the engine's own connection cannot loop.
+	Protect []string `json:"protect"`
 }
 
 const mtu = 1500
@@ -76,6 +83,13 @@ func (t *mobileTun) Start(cfg core.TunConfig) error {
 		Address4: vpn.Inet4Prefix.Addr().String(), Prefix4: vpn.Inet4Prefix.Bits(),
 		Address6: vpn.Inet6Prefix.Addr().String(), Prefix6: vpn.Inet6Prefix.Bits(),
 		DNS: vpn.DNSServer.String(), MTU: mtu, BypassLAN: cfg.BypassLAN,
+		TunnelMode: cfg.AppTunnelMode, Apps: cfg.Apps,
+	}
+	if c.TunnelMode == "" {
+		c.TunnelMode = "all"
+	}
+	for _, a := range cfg.Protect {
+		c.Protect = append(c.Protect, a.String())
 	}
 	b, _ := json.Marshal(c)
 	fd, err := t.host.OpenTun(string(b))
@@ -89,7 +103,7 @@ func (t *mobileTun) Start(cfg core.TunConfig) error {
 	if fd <= 0 {
 		return errors.New("could not start the VPN: no interface")
 	}
-	v, err := vpn.Start(nil, vpn.Options{FD: int(fd), MTU: mtu, Dial: cfg.Dial, Forward: cfg.Forward, BypassIran: cfg.BypassIran, Log: cfg.Log})
+	v, err := vpn.Start(nil, vpn.Options{FD: int(fd), MTU: mtu, Dial: cfg.Dial, Forward: cfg.Forward, BypassIran: cfg.BypassIran, Protect: cfg.Protect, ProtectPort: cfg.ProtectPort, Log: cfg.Log})
 	if err != nil {
 		return err
 	}

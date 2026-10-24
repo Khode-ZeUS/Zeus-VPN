@@ -1,6 +1,8 @@
 package core
 
 import (
+	"net/netip"
+
 	"zeusvpn/internal/mozilla"
 	"zeusvpn/internal/tunnel"
 	"zeusvpn/internal/vpn"
@@ -18,6 +20,12 @@ type TunDriver interface {
 	Close()
 }
 
+// RouteProtector is implemented by drivers that can re-exclude the VPN
+// server's addresses after a failover moved the tunnel to another server.
+type RouteProtector interface {
+	UpdateProtected(addrs []netip.Addr, port int)
+}
+
 type TunConfig struct {
 	// Dial opens a connection through the VPN server.
 	Dial    tunnel.DialFunc
@@ -30,6 +38,16 @@ type TunConfig struct {
 	Log        func(string)
 	// OnFail reports that the adapter went away while connected.
 	OnFail func(error)
+	// Protect/ProtectPort name the VPN server: its addresses stay off the
+	// adapter's routes so the app's own tunnel connection cannot loop back
+	// inside the tunnel it is carrying.
+	Protect     []netip.Addr
+	ProtectPort int
+	// AppTunnelMode ("all", "include" or "exclude") and Apps (Android
+	// package names) select which apps the system VPN captures; only the
+	// mobile VPN APIs can filter per app.
+	AppTunnelMode string
+	Apps          []string
 }
 
 // NewTunDriver creates the driver for Full VPN mode. The mobile apps replace
@@ -41,6 +59,7 @@ var NewTunDriver = defaultTunDriver
 type localTun struct {
 	binding *vpn.Binding
 	vpn     *vpn.VPN
+	port    int
 }
 
 func (t *localTun) Prepare() error {
@@ -54,12 +73,24 @@ func (t *localTun) Prepare() error {
 }
 
 func (t *localTun) Start(cfg TunConfig) error {
-	v, err := vpn.Start(t.binding, vpn.Options{Dial: cfg.Dial, Forward: cfg.Forward, BypassIran: cfg.BypassIran, ExcludeLAN: cfg.BypassLAN, Log: cfg.Log})
+	v, err := vpn.Start(t.binding, vpn.Options{
+		Dial: cfg.Dial, Forward: cfg.Forward, BypassIran: cfg.BypassIran,
+		ExcludeLAN: cfg.BypassLAN, Protect: cfg.Protect, ProtectPort: cfg.ProtectPort, Log: cfg.Log,
+	})
 	if err != nil {
 		return err
 	}
-	t.vpn = v
+	t.vpn, t.port = v, cfg.ProtectPort
 	return nil
+}
+
+func (t *localTun) UpdateProtected(addrs []netip.Addr, port int) {
+	if port <= 0 {
+		port = t.port
+	}
+	if t.vpn != nil {
+		t.vpn.UpdateProtect(addrs, port)
+	}
 }
 
 func (t *localTun) LUID() uint64 {

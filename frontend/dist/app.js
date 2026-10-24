@@ -12,6 +12,9 @@ let timerHandle = null;
 let lastStats = { up: 0, down: 0, upRate: 0, downRate: 0 };
 let addingAccount = false;
 let lastQuotaRefresh = 0;
+let installedApps = null; // cached GetApps result
+let appMode = "all";      // pending per-app tunnel mode
+let selectedApps = [];    // pending selection (package ids)
 
 const GLOBE = '<svg viewBox="0 0 24 24"><path d="M12 2l2.4 5.6L20 8.3l-4.3 4 1.2 6L12 15.4 7.1 18.3l1.2-6L4 8.3l5.6-.7Z"/></svg>';
 const CHEVRON = '<svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>';
@@ -86,8 +89,15 @@ function openSheet(id) {
   for (const s of $$(".sheet")) s.hidden = s.id !== id;
 }
 function closeSheets() {
+  const appsOpen = !$("#sheet-apps").hidden;
   $("#scrim").hidden = true;
   for (const s of $$(".sheet")) s.hidden = true;
+  // "Selected only"/"Except selected" need at least one app; an empty
+  // selection reverts to tunnelling everything.
+  if (appsOpen && appMode !== "all" && !selectedApps.length) {
+    appMode = "all";
+    saveAppSettings();
+  }
 }
 
 // ---------- rendering ----------
@@ -150,6 +160,8 @@ function applyPlatform() {
   $("#set-autostart").closest(".toggle-row").querySelector("b").textContent = AUTOSTART_LABEL[snap.platform] || "Start at login";
   $("#btn-logfile").hidden = !f.logFile;
   $("#group-protection").hidden = !f.killSwitch;
+  $("#group-appfilter").hidden = !f.appFilter;
+  $("#app-filter").hidden = !f.appFilter;
 }
 
 function render() {
@@ -264,6 +276,11 @@ function render() {
   $("#set-killswitch").checked = snap.settings.kill_switch;
   $("#set-tls-split").value = snap.settings.tls_split || "auto";
   $("#set-autostart").checked = snap.autostart;
+  // Per-app tunnelling (Android): reflect the saved mode and selection.
+  appMode = snap.settings.app_tunnel_mode || "all";
+  selectedApps = (snap.settings.apps || []).slice();
+  for (const b of $$("#set-apptunnel button")) b.classList.toggle("active", b.dataset.mode === appMode);
+  $("#apps-count").textContent = selectedApps.length ? `· ${selectedApps.length}` : "";
   if (document.activeElement !== $("#set-port")) $("#set-port").value = snap.settings.proxy_port;
   $("#about").innerHTML = `Zeus VPN ${esc(snap.version)} · local proxy ${esc(snap.proxyAddr || "127.0.0.1:" + snap.settings.proxy_port)}<br>Powered by Mozilla VPN · <a href="#" id="link-github">GitHub</a>`;
   $("#link-github").onclick = (e) => { e.preventDefault(); api().OpenURL("https://github.com/Khode-ZeUS/Zeus-VPN"); };
@@ -316,6 +333,51 @@ function renderServers() {
     html += "</div>";
   }
   list.innerHTML = html || '<div class="list-msg">No matches</div>';
+}
+
+// ---------- per-app tunnelling (Android) ----------
+async function saveAppSettings() {
+  const s = { ...snap.settings, app_tunnel_mode: appMode, apps: selectedApps };
+  try {
+    await api().SaveSettings(s);
+    await refreshSnapshot();
+  } catch (e) {
+    toast(errText(e));
+    render();
+  }
+}
+
+async function openAppsSheet() {
+  for (const b of $$("#set-apptunnel button")) b.classList.toggle("active", b.dataset.mode === appMode);
+  $("#app-search").value = "";
+  openSheet("sheet-apps");
+  if (!installedApps) {
+    $("#app-list").innerHTML = '<div class="list-msg">Loading apps…</div>';
+    try {
+      installedApps = await api().GetApps();
+    } catch (e) {
+      toast(errText(e));
+      installedApps = [];
+    }
+  }
+  renderApps();
+}
+
+function renderApps() {
+  const list = $("#app-list");
+  if (!installedApps) return;
+  if (!installedApps.length) {
+    list.innerHTML = '<div class="list-msg">No apps found</div>';
+    return;
+  }
+  const q = $("#app-search").value.trim().toLowerCase();
+  const sel = new Set(selectedApps);
+  const rows = installedApps.filter((a) => !q || (a.name || "").toLowerCase().includes(q) || (a.id || "").toLowerCase().includes(q));
+  list.innerHTML = rows.map((a) => `
+    <label class="app-row">
+      <input type="checkbox" data-app="${esc(a.id)}" ${sel.has(a.id) ? "checked" : ""}>
+      <span class="name"><b>${esc(a.name)}</b><small>${esc(a.id)}</small></span>
+    </label>`).join("") || '<div class="list-msg">No matches</div>';
 }
 
 // ---------- data ----------
@@ -545,6 +607,37 @@ function wire() {
   };
   for (const id of ["#set-bypass-ir", "#set-bypass-lan", "#set-autoconnect", "#set-autoswitch", "#set-tls-split", "#set-killswitch"]) $(id).onchange = saveSettings;
   $("#set-port").onchange = saveSettings;
+
+  for (const b of $$("#set-apptunnel button")) {
+    b.onclick = async () => {
+      const m = b.dataset.mode;
+      if (m === appMode) return;
+      appMode = m;
+      for (const x of $$("#set-apptunnel button")) x.classList.toggle("active", x.dataset.mode === m);
+      if (m === "all") {
+        selectedApps = [];
+        await saveAppSettings();
+      } else if (selectedApps.length) {
+        await saveAppSettings();
+      } else {
+        openAppsSheet(); // pick at least one app, or close to revert
+      }
+    };
+  }
+  $("#btn-choose-apps").onclick = () => openAppsSheet();
+  $("#app-search").oninput = renderApps;
+  $("#app-list").onchange = async (e) => {
+    const id = e.target.dataset && e.target.dataset.app;
+    if (!id) return;
+    if (e.target.checked) {
+      if (!selectedApps.includes(id)) selectedApps.push(id);
+    } else {
+      selectedApps = selectedApps.filter((x) => x !== id);
+    }
+    $("#apps-count").textContent = selectedApps.length ? `· ${selectedApps.length}` : "";
+    if (selectedApps.length) await saveAppSettings();
+    // With nothing selected, keep the picker open: closing it reverts to "All apps".
+  };
   $("#set-autostart").onchange = async (e) => {
     try {
       await api().SetAutostart(e.target.checked);

@@ -135,25 +135,40 @@ class ZeusVpnService : VpnService() {
         // Per-app tunnelling: "include" captures only the chosen apps,
         // "exclude" captures everything but them (plus this app, whose own
         // connection to the VPN server must always stay direct).
-        val apps = cfg.optJSONArray("apps")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty()
+        val appsJson = cfg.optJSONArray("apps")
+        val apps = ArrayList<String>()
+        if (appsJson != null) {
+            for (i in 0 until appsJson.length()) apps.add(appsJson.optString(i))
+        }
+        val mode = cfg.optString("tunnelMode", "all")
         var added = 0
-        when (cfg.optString("tunnelMode", "all")) {
-            "include" -> for (pkg in apps) {
+        if (mode == "include") {
+            // Zeus itself is deliberately never added: its own upstream
+            // connection must go out directly.
+            for (pkg in apps) {
                 // Skip apps that are no longer installed instead of failing.
-                try { b.addApplication(pkg); added++ } catch (_: PackageManager.NameNotFoundException) {}
-                // Zeus itself is deliberately never added: its own upstream
-                // connection must go out directly.
-            }
-            "exclude" -> {
-                b.addDisallowedApplication(packageName)
-                for (pkg in apps) {
-                    try { b.addDisallowedApplication(pkg); added++ } catch (_: PackageManager.NameNotFoundException) {}
+                try {
+                    b.addApplication(pkg)
+                    added++
+                } catch (e: PackageManager.NameNotFoundException) {
+                    // not installed any more
                 }
             }
-            else -> b.addDisallowedApplication(packageName)
+        } else if (mode == "exclude") {
+            b.addDisallowedApplication(packageName)
+            for (pkg in apps) {
+                try {
+                    b.addDisallowedApplication(pkg)
+                    added++
+                } catch (e: PackageManager.NameNotFoundException) {
+                    // not installed any more
+                }
+            }
+        } else {
+            b.addDisallowedApplication(packageName)
         }
         // An empty allow-list would silently tunnel every app instead.
-        if (cfg.optString("tunnelMode", "all") != "all" && added == 0) {
+        if (mode != "all" && added == 0) {
             throw IllegalStateException("none of the selected apps is installed")
         }
 
@@ -162,9 +177,15 @@ class ZeusVpnService : VpnService() {
         }
         // Keep the VPN server itself off the tunnel (loop protection).
         if (Build.VERSION.SDK_INT >= 33) {
-            val protect = cfg.optJSONArray("protect") ?: null
-            for (i in 0 until (protect?.length() ?: 0)) {
-                runCatching { b.excludeRoute(IpPrefix(InetAddress.getByName(protect!!.optString(i)), 32)) }
+            val protect = cfg.optJSONArray("protect")
+            if (protect != null) {
+                for (i in 0 until protect.length()) {
+                    try {
+                        b.excludeRoute(IpPrefix(InetAddress.getByName(protect.optString(i)), 32))
+                    } catch (e: Exception) {
+                        // a bad address never blocks the VPN itself
+                    }
+                }
             }
         }
         val pfd = b.establish() ?: throw IllegalStateException("VPN permission was not granted")

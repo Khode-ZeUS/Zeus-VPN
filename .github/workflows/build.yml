@@ -183,6 +183,11 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      # A re-tagged build must not inherit an earlier release's body or files.
+      - name: Remove any earlier release for this tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release delete "$GITHUB_REF_NAME" --yes || true
       - uses: actions/download-artifact@v4
         with:
           path: dist

@@ -132,26 +132,28 @@ class ZeusVpnService : VpnService() {
             .setConfigureIntent(openAppIntent())
         if (Build.VERSION.SDK_INT >= 29) b.setMetered(false)
 
-        // Per-app tunnelling: "include" captures only the chosen apps,
-        // "exclude" captures everything but them (plus this app, whose own
-        // connection to the VPN server must always stay direct).
+        // Per-app tunnelling. VpnService.Builder can only *disallow* apps
+        // (API 21), so "tunnel only the selected apps" is built by
+        // disallowing every other installed package — the way WireGuard for
+        // Android does it. Zeus itself is always direct: its own connection
+        // to the VPN server must not go through the VPN.
         val appsJson = cfg.optJSONArray("apps")
-        val apps = ArrayList<String>()
+        val apps = HashSet<String>()
         if (appsJson != null) {
             for (i in 0 until appsJson.length()) apps.add(appsJson.optString(i))
         }
         val mode = cfg.optString("tunnelMode", "all")
-        var added = 0
+        var selected = 0
         if (mode == "include") {
-            // Zeus itself is deliberately never added: its own upstream
-            // connection must go out directly.
-            for (pkg in apps) {
-                // Skip apps that are no longer installed instead of failing.
-                try {
-                    b.addApplication(pkg)
-                    added++
-                } catch (e: PackageManager.NameNotFoundException) {
-                    // not installed any more
+            val installed = packageManager.getInstalledPackages(0)
+            for (pi in installed) {
+                val pn = pi.packageName ?: continue
+                if (pn == packageName) {
+                    try { b.addDisallowedApplication(pn) } catch (e: PackageManager.NameNotFoundException) { }
+                } else if (apps.contains(pn)) {
+                    selected++
+                } else {
+                    try { b.addDisallowedApplication(pn) } catch (e: PackageManager.NameNotFoundException) { }
                 }
             }
         } else if (mode == "exclude") {
@@ -159,7 +161,7 @@ class ZeusVpnService : VpnService() {
             for (pkg in apps) {
                 try {
                     b.addDisallowedApplication(pkg)
-                    added++
+                    selected++
                 } catch (e: PackageManager.NameNotFoundException) {
                     // not installed any more
                 }
@@ -168,7 +170,7 @@ class ZeusVpnService : VpnService() {
             b.addDisallowedApplication(packageName)
         }
         // An empty allow-list would silently tunnel every app instead.
-        if (mode != "all" && added == 0) {
+        if (mode == "include" && selected == 0) {
             throw IllegalStateException("none of the selected apps is installed")
         }
 

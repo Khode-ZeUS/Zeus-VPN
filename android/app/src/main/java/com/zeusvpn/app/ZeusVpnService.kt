@@ -134,9 +134,10 @@ class ZeusVpnService : VpnService() {
 
         // Per-app tunnelling. VpnService.Builder can only *disallow* apps
         // (API 21), so "tunnel only the selected apps" is built by
-        // disallowing every other installed package — the way WireGuard for
-        // Android does it. Zeus itself is always direct: its own connection
-        // to the VPN server must not go through the VPN.
+        // disallowing every other visible app — the way WireGuard for
+        // Android does it (launcher-visible apps only, no
+        // QUERY_ALL_PACKAGES). Zeus itself is always direct: its own
+        // connection to the VPN server must not go through the VPN.
         val appsJson = cfg.optJSONArray("apps")
         val apps = HashSet<String>()
         if (appsJson != null) {

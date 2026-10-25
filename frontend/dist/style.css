@@ -298,12 +298,20 @@ body.connected .status-text { color: var(--green); }
 @keyframes pop { from { transform: scale(0.94); opacity: 0; } }
 
 /* Mobile apps (Android, iOS): no window buttons; keep clear of the status
-   bar, notch and home indicator. */
-html.mobile .titlebar { height: calc(44px + env(safe-area-inset-top)); padding-top: env(safe-area-inset-top); --wails-draggable: none; }
-html.mobile .view { height: calc(100% - 44px - env(safe-area-inset-top)); padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
+   bar, notch and home indicator. Android WebViews often report 0 for
+   env(safe-area-inset-*), so the native app also injects the real sizes
+   as --sa-* variables; the larger of the two wins (iOS uses env()). */
+html.mobile {
+  --safe-top: max(env(safe-area-inset-top), var(--sa-top, 0px));
+  --safe-bottom: max(env(safe-area-inset-bottom), var(--sa-bottom, 0px));
+  --safe-left: max(env(safe-area-inset-left), var(--sa-left, 0px));
+  --safe-right: max(env(safe-area-inset-right), var(--sa-right, 0px));
+}
+html.mobile .titlebar { height: calc(44px + var(--safe-top)); padding-top: var(--safe-top); --wails-draggable: none; }
+html.mobile .view { height: calc(100% - 44px - var(--safe-top)); padding-bottom: calc(20px + var(--safe-bottom)); padding-left: max(20px, var(--safe-left)); padding-right: max(20px, var(--safe-right)); }
 html.mobile .scrim, html.mobile .modal { inset: 0; }
-html.mobile .sheet { top: calc(80px + env(safe-area-inset-top)); padding-bottom: env(safe-area-inset-bottom); }
-html.mobile .toast { bottom: calc(22px + env(safe-area-inset-bottom)); }
+html.mobile .sheet { top: calc(80px + var(--safe-top)); padding-bottom: calc(16px + var(--safe-bottom)); }
+html.mobile .toast { bottom: calc(22px + var(--safe-bottom)); }
 html.mobile body { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
 html.mobile input { user-select: text; -webkit-user-select: text; }
 

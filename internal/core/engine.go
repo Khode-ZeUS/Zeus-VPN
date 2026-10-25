@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -249,7 +250,9 @@ func (e *Engine) Servers(force bool) ([]mozilla.Country, error) {
 	return list, nil
 }
 
-// Latency measures TCP connect time (ms) to one server per city; -1 = unreachable.
+// Latency measures the TCP + TLS handshake time (ms) to one server per
+// city; -1 = unreachable. The handshake must succeed: filters that answer
+// the TCP SYN themselves would otherwise show a fake single-digit ping.
 func (e *Engine) Latency() map[string]int {
 	countries, err := e.Servers(false)
 	out := map[string]int{}
@@ -277,15 +280,7 @@ func (e *Engine) Latency() map[string]int {
 		go func(j job) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer cancel()
-			start := time.Now()
-			c, err := netx.DialContext(ctx, "tcp", j.ep.Addr())
-			ms := -1
-			if err == nil {
-				ms = int(time.Since(start).Milliseconds())
-				c.Close()
-			}
+			ms := probeLatency(j.ep)
 			mu.Lock()
 			out[j.key] = ms
 			mu.Unlock()
@@ -293,6 +288,33 @@ func (e *Engine) Latency() map[string]int {
 	}
 	wg.Wait()
 	return out
+}
+
+// probeLatency measures a full TCP + TLS handshake (the same path a real
+// connection takes, TLS ClientHello fragmentation included) and reports the
+// elapsed milliseconds, or -1 when the server cannot be reached.
+func probeLatency(ep mozilla.Endpoint) int {
+	host, portStr, err := net.SplitHostPort(ep.Addr())
+	if err != nil {
+		return -1
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ips, err := netx.LookupHost(ctx, host)
+	if err != nil || len(ips) == 0 {
+		return -1
+	}
+	start := time.Now()
+	conn, err := netx.DialContext(ctx, "tcp", net.JoinHostPort(ips[0].String(), portStr))
+	if err != nil {
+		return -1
+	}
+	defer conn.Close()
+	tc := tls.Client(conn, &tls.Config{ServerName: host, NextProtos: []string{"h2"}, MinVersion: tls.VersionTLS12})
+	if err := tc.HandshakeContext(ctx); err != nil {
+		return -1
+	}
+	return int(time.Since(start).Milliseconds())
 }
 
 // Connect starts the connection in the background; progress arrives via OnState.

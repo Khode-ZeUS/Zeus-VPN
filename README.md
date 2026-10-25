@@ -138,6 +138,19 @@ gradle -p android assembleRelease
 
 The APKs are in `android/app/build/outputs/apk/release/`. Release builds are signed with the keystore named by the `ZEUS_KEYSTORE`, `ZEUS_KEYSTORE_PASSWORD`, `ZEUS_KEY_ALIAS` and `ZEUS_KEY_PASSWORD` environment variables (in CI: the `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD` secrets), or with the debug key if none is set. Use the same keystore for every release so that updates install over the previous version. After building the `.aar` you can also open `android/` in Android Studio.
 
+To create a keystore once (keep it secret and out of the repository; a debug-signed build can never be upgraded to a properly signed one, so start early):
+
+```bash
+PASS=$(openssl rand -base64 18)
+openssl req -x509 -newkey rsa:2048 -sha256 -days 10950 -nodes \
+  -keyout key.pem -out cert.pem -subj "/CN=Zeus VPN/O=Zeus VPN"
+openssl pkcs12 -export -in cert.pem -inkey key.pem -name zeus \
+  -passout pass:"$PASS" -out zeus-release.p12 && rm key.pem cert.pem
+base64 -w 76 zeus-release.p12   # the ANDROID_KEYSTORE_BASE64 secret
+```
+
+Then add the four repository secrets (Settings → Secrets and variables → Actions): `ANDROID_KEYSTORE_BASE64` (the base64 above), `ANDROID_KEYSTORE_PASSWORD` and `ANDROID_KEY_PASSWORD` (the password), and `ANDROID_KEY_ALIAS` (`zeus`). The first properly signed release has to be installed fresh (uninstall the old one); after that every update installs over the previous version.
+
 ### iOS
 
 iOS only runs VPN apps signed with a paid [Apple Developer](https://developer.apple.com/programs/) account (the Network Extension entitlement); free accounts and the unsigned `.ipa` from the releases cannot run the VPN as they are. On a Mac with Xcode and [XcodeGen](https://github.com/yonaskolb/XcodeGen):
@@ -176,7 +189,9 @@ In Xcode, select your team for both targets (`ZeusVPN` and `PacketTunnel`). If y
 - DNS در حالت Full VPN از داخل تونل و به‌صورت رمزنگاری‌شده (DoH) انجام می‌شود، پس آلودگی DNS مشکلی ایجاد نمی‌کند.
 - برای برنامه‌هایی مثل تلگرام می‌توانید پروکسی `127.0.0.1:10820` (HTTP یا SOCKS5) را دستی تنظیم کنید.
 
-**نصب:** فایل مناسب سیستم خود را دانلود کنید، وارد اکانت موزیلا شوید و دکمه‌ی اتصال را بزنید:
+**ساخت اکانت:** برای ورود به برنامه یک اکانت رایگان موزیلا لازم است؛ از [accounts.firefox.com/signup](https://accounts.firefox.com/signup) در چند ثانیه بسازید (فقط ایمیل لازم است). ماهانه ۵۰ گیگابایت ترافیک رایگان می‌گیرید و می‌توانید چند اکانت اضافه کنید.
+
+**نصب:** فایل مناسب سیستم خود را دانلود کنید، با اکانت موزیلا وارد شوید و دکمه‌ی اتصال را بزنید:
 
 - **ویندوز:** فایل `ZeusVPN-amd64-installer.exe` از [آخرین نسخه](https://github.com/Khode-ZeUS/Zeus-VPN/releases/latest).
 - **اندروید:** فایل `ZeusVPN-android-arm64-v8a.apk` از [آخرین نسخه](https://github.com/Khode-ZeUS/Zeus-VPN/releases/latest) برای بیشتر گوشی‌ها (اگر مطمئن نیستید، نسخه‌ی `universal`). در اندروید همیشه حالت Full VPN فعال است و بار اول اجازه‌ی VPN پرسیده می‌شود.

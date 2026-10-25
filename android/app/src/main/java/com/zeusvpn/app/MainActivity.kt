@@ -52,14 +52,19 @@ class MainActivity : Activity() {
         web = WebView(this)
         web.setBackgroundColor(0xFF090B1A.toInt())
         setContentView(web)
-        // Keep the page clear of the status bar, navigation bar and keyboard.
+        // Edge-to-edge (targetSdk 35): the page keeps clear of the system
+        // bars itself, using the real inset sizes injected as CSS variables —
+        // env(safe-area-inset-*) alone returns 0 on many Android WebViews.
+        // The keyboard still resizes the WebView.
         web.setOnApplyWindowInsetsListener { v, insets ->
             if (Build.VERSION.SDK_INT >= 30) {
-                val i = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.ime() or WindowInsets.Type.displayCutout())
-                v.setPadding(i.left, i.top, i.right, i.bottom)
+                val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                val ime = insets.getInsets(WindowInsets.Type.ime())
+                v.setPadding(ime.left, ime.top, ime.right, ime.bottom)
+                setSafeArea(bars.top, bars.bottom, bars.left, bars.right)
             } else {
                 @Suppress("DEPRECATION")
-                v.setPadding(insets.systemWindowInsetLeft, insets.systemWindowInsetTop, insets.systemWindowInsetRight, insets.systemWindowInsetBottom)
+                setSafeArea(insets.systemWindowInsetTop, insets.systemWindowInsetBottom, insets.systemWindowInsetLeft, insets.systemWindowInsetRight)
             }
             insets
         }
@@ -83,6 +88,11 @@ class MainActivity : Activity() {
                 runCatching { startActivity(Intent(Intent.ACTION_VIEW, request.url)) }
                 return true
             }
+
+            override fun onPageFinished(view: WebView, url: String) {
+                // Re-apply the insets now that the page can receive them.
+                view.requestApplyInsets()
+            }
         }
         web.addJavascriptInterface(Bridge(), "ZeusAndroid")
         Core.listener = { name, payload ->
@@ -101,6 +111,19 @@ class MainActivity : Activity() {
 
     private fun js(code: String) {
         if (!isDestroyed) web.evaluateJavascript(code, null)
+    }
+
+    /** Publishes the system bar sizes to the page as CSS variables. */
+    private fun setSafeArea(top: Int, bottom: Int, left: Int, right: Int) {
+        runOnUiThread {
+            js(
+                "var d=document.documentElement.style;" +
+                    "d.setProperty('--sa-top','${top}px');" +
+                    "d.setProperty('--sa-bottom','${bottom}px');" +
+                    "d.setProperty('--sa-left','${left}px');" +
+                    "d.setProperty('--sa-right','${right}px');"
+            )
+        }
     }
 
     private fun resolve(id: Int, ok: Boolean, payload: String) = runOnUiThread {

@@ -123,6 +123,10 @@ func DialResolved(ctx context.Context, network, address string) (net.Conn, error
 	return nil, firstErr
 }
 
+// lookupDoH asks every resolver and merges the answers: one resolver may
+// return a single address that happens to be filtered or MITM'd, while the
+// others still know working ones. The first caller-visible answer usually
+// arrives within milliseconds of the fastest single reply.
 func lookupDoH(ctx context.Context, host string) []netip.Addr {
 	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
 	defer cancel()
@@ -137,17 +141,25 @@ func lookupDoH(ctx context.Context, host string) []netip.Addr {
 			ch <- result{addrs}
 		}(ep)
 	}
+	var merged []netip.Addr
+	seen := map[string]bool{}
 	for range dohEndpoints {
 		select {
 		case r := <-ch:
-			if len(r.addrs) > 0 {
-				return r.addrs
+			for _, a := range r.addrs {
+				if !seen[a.String()] {
+					seen[a.String()] = true
+					merged = append(merged, a)
+				}
 			}
 		case <-ctx.Done():
+			if len(merged) > 0 {
+				return merged
+			}
 			return nil
 		}
 	}
-	return nil
+	return merged
 }
 
 func queryDoH(ctx context.Context, endpoint, host string, qtype dnsmessage.Type) ([]netip.Addr, error) {

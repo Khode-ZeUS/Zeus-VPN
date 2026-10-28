@@ -141,6 +141,7 @@
       <div class="accounts" id="account-list"></div>
       <button class="btn ghost" id="btn-add-account"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add another account</button>
       <label class="toggle-row"><span><b>Auto-switch accounts</b><small>Use the next account when one runs out of data</small></span><input type="checkbox" id="set-autoswitch"><i></i></label>
+      <button class="btn ghost" id="btn-usage"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg>Data usage by destination</button>
       <div class="group-label" id="group-protection">Protection</div>
       <label class="toggle-row"><span><b>Kill switch</b><small>If the VPN drops, block the internet until it reconnects or you disconnect. Needs administrator.</small></span><input type="checkbox" id="set-killswitch"><i></i></label>
       <div class="group-label">Routing</div>
@@ -186,6 +187,22 @@
     <div class="server-list" id="app-list"></div>
   </section>
 
+  <section class="sheet" id="sheet-usage" hidden>
+    <div class="sheet-head">
+      <h3>Data usage</h3>
+      <button class="icon-btn" id="btn-usage-reset" title="Clear history"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+      <button class="icon-btn" data-close title="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div class="usage-summary">
+      <div><span class="muted small">Download</span><b id="usage-total-down">—</b></div>
+      <div><span class="muted small">Upload</span><b id="usage-total-up">—</b></div>
+      <div><span class="muted small">Total</span><b id="usage-total">—</b></div>
+    </div>
+    <p class="usage-note muted small" id="usage-note">Where the VPN data went, latest month. Only traffic through the VPN servers counts.</p>
+    <label class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="usage-search" placeholder="Search destination"></label>
+    <div class="server-list" id="usage-list"></div>
+  </section>
+
   <section class="sheet" id="sheet-logs" hidden>
     <div class="sheet-head">
       <h3>Logs</h3>
@@ -194,6 +211,17 @@
     </div>
     <div class="logs" id="logs"></div>
   </section>
+
+  <div class="modal" id="modal-confirm" hidden>
+    <div class="modal-card">
+      <h3 id="confirm-title">Are you sure?</h3>
+      <p class="muted" id="confirm-message"></p>
+      <div class="btn-row">
+        <button class="btn primary" id="btn-confirm-yes">Yes</button>
+        <button class="btn ghost" id="btn-confirm-no">Cancel</button>
+      </div>
+    </div>
+  </div>
 
   <div class="modal" id="modal-admin" hidden>
     <div class="modal-card">

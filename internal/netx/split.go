@@ -51,6 +51,14 @@ func HostBlocked(host string) bool {
 	return false
 }
 
+// MarkBlocked records that a plain handshake to host was cut off, so the
+// next attempt will use ClientHello fragmentation (SplitSNI). Used by the
+// latency probe so that a server whose plain handshake is filtered (like
+// Canada) is still probed with fragmentation, exactly like a real connection.
+func MarkBlocked(host string) {
+	blocked.Store(host, time.Now())
+}
+
 type splitConn struct {
 	net.Conn
 	wrote     bool

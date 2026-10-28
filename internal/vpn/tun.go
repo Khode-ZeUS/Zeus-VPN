@@ -22,6 +22,7 @@ import (
 
 	"zeusvpn/internal/netx"
 	"zeusvpn/internal/tunnel"
+	"zeusvpn/internal/usage"
 
 	tun "github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common/buf"
@@ -386,8 +387,13 @@ func (h *handler) NewDNSPacket(payload []byte, source, destination M.Socksaddr, 
 }
 
 func (h *handler) NewConnectionEx(ctx context.Context, conn net.Conn, source, destination M.Socksaddr, onClose N.CloseHandlerFunc) {
-	err := h.handleTCP(conn, destination)
-	conn.Close()
+	// Attribute the connection's bytes to the app that opened it. The TUN
+	// stack reports the destination as the conn's RemoteAddr; the app's
+	// real address is the source.
+	counted := usage.WrapAddr(conn, source.String())
+	ctx = usage.WithApp(ctx, usage.ConnApp(counted))
+	err := h.handleTCP(counted, destination)
+	counted.Close()
 	if onClose != nil {
 		onClose(err)
 	}

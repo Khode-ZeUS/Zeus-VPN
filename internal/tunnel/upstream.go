@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"zeusvpn/internal/netx"
+	"zeusvpn/internal/usage"
 
 	"golang.org/x/net/http2"
 )
@@ -188,6 +189,9 @@ func (u *Upstream) handshake(ctx context.Context, ep endpoint, ip netip.Addr) (*
 }
 
 func (u *Upstream) newConn(ctx context.Context, ep endpoint) (*http2.ClientConn, error) {
+	// The first error is reported: the addresses are sorted IPv4-first, and
+	// a trailing IPv6 attempt ("an invalid argument was supplied" on hosts
+	// without usable IPv6) must not mask the real cause.
 	var lastErr error
 	for _, ip := range ep.addrs {
 		wasBlocked := netx.HostBlocked(ep.host)
@@ -198,7 +202,9 @@ func (u *Upstream) newConn(ctx context.Context, ep endpoint) (*http2.ClientConn,
 			tc, err = u.handshake(ctx, ep, ip)
 		}
 		if err != nil {
-			lastErr = err
+			if lastErr == nil {
+				lastErr = err
+			}
 			continue
 		}
 		if p := tc.ConnectionState().NegotiatedProtocol; p != "h2" {
@@ -209,7 +215,9 @@ func (u *Upstream) newConn(ctx context.Context, ep endpoint) (*http2.ClientConn,
 		cc, err := u.transport.NewClientConn(tc)
 		if err != nil {
 			tc.Close()
-			lastErr = err
+			if lastErr == nil {
+				lastErr = err
+			}
 			continue
 		}
 		return cc, nil
@@ -329,7 +337,7 @@ func (u *Upstream) Dial(ctx context.Context, target string) (net.Conn, error) {
 			}
 			return nil, lastErr
 		}
-		return &streamConn{u: u, body: res.resp.Body, w: pw, target: target}, nil
+		return &streamConn{u: u, body: res.resp.Body, w: pw, target: target, app: usage.AppFromContext(ctx)}, nil
 	}
 	return nil, lastErr
 }
@@ -352,24 +360,63 @@ type streamConn struct {
 	w      *io.PipeWriter
 	target string
 	once   sync.Once
+
+	// Bytes not yet flushed to the per-destination usage record.
+	aUp   atomic.Int64
+	aDown atomic.Int64
+
+	// The app this stream belongs to (from the dial context), for the
+	// per-app breakdown; nil for the tunnel's own connections.
+	app *usage.App
 }
 
 func (c *streamConn) Read(p []byte) (int, error) {
 	n, err := c.body.Read(p)
 	c.u.Down.Add(int64(n))
+	c.account(int64(n), false)
 	return n, err
 }
 
 func (c *streamConn) Write(p []byte) (int, error) {
 	n, err := c.w.Write(p)
 	c.u.Up.Add(int64(n))
+	c.account(int64(n), true)
 	return n, err
+}
+
+const accountChunk = 32 << 10
+
+// account buffers the stream's bytes for the usage record and flushes once
+// 32 KiB has moved, so the panel stays live without locking on every byte.
+func (c *streamConn) account(n int64, up bool) {
+	if up {
+		c.aUp.Add(n)
+	} else {
+		c.aDown.Add(n)
+	}
+	if c.aUp.Load()+c.aDown.Load() >= accountChunk {
+		c.flushUsage()
+	}
+}
+
+// flushUsage reports the buffered bytes for this connection's destination,
+// globally and in the owning app's breakdown.
+func (c *streamConn) flushUsage() {
+	up := c.aUp.Swap(0)
+	down := c.aDown.Swap(0)
+	if up <= 0 && down <= 0 {
+		return
+	}
+	host := usage.Normalize(c.target)
+	usage.TrackHost(host, up, down)
+	usage.TrackAppHost(c.app, host, up, down)
 }
 
 func (c *streamConn) CloseWrite() error { return c.w.Close() }
 
 func (c *streamConn) Close() error {
 	c.once.Do(func() {
+		c.flushUsage()
 		c.w.Close()
 		c.body.Close()
 	})

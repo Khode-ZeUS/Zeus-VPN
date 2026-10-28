@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"zeusvpn/internal/usage"
 )
 
 // DialFunc opens a TCP connection to "host:port" (through the tunnel, or
@@ -62,17 +64,19 @@ func (s *MixedServer) serve() {
 		if err != nil {
 			return
 		}
+		// Attribute the connection's bytes to the app that opened it.
+		counted := usage.Wrap(c)
 		s.mu.Lock()
-		s.conns[c] = struct{}{}
+		s.conns[counted] = struct{}{}
 		s.mu.Unlock()
 		go func() {
 			defer func() {
 				s.mu.Lock()
-				delete(s.conns, c)
+				delete(s.conns, counted)
 				s.mu.Unlock()
-				c.Close()
+				counted.Close()
 			}()
-			s.handle(c)
+			s.handle(counted)
 		}()
 	}
 }
@@ -81,6 +85,9 @@ type peekConn struct {
 	net.Conn
 	r *bufio.Reader
 }
+
+// Unwrap exposes the wrapped (counted) connection to usage.AppOf.
+func (p *peekConn) Unwrap() net.Conn { return p.Conn }
 
 func (p *peekConn) Read(b []byte) (int, error) { return p.r.Read(b) }
 
@@ -112,6 +119,9 @@ func (s *MixedServer) handle(c net.Conn) {
 func (s *MixedServer) connect(client net.Conn, target string) (net.Conn, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	// The tunnel streams opened for this client count towards its app's
+	// per-destination usage.
+	ctx = usage.WithApp(ctx, usage.AppOf(client))
 	up, err := s.dial(ctx, target)
 	if err != nil {
 		s.log(fmt.Sprintf("warning failed to open tunnel to %s: %v", target, err))

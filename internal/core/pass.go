@@ -108,6 +108,15 @@ func (e *Engine) applyPass(pass *mozilla.ProxyPass, email string) {
 	e.mu.Lock()
 	up := e.up
 	e.passExpires = pass.Expires
+	if pass.QuotaLimit > 0 {
+		e.passLimit, e.passLeft = pass.QuotaLimit, pass.QuotaLeft
+	}
+	if up == nil {
+		// The connection has not started yet: its counters begin at zero.
+		e.passUpAt, e.passDownAt = 0, 0
+	} else {
+		e.passUpAt, e.passDownAt = up.Up.Load(), up.Down.Load()
+	}
 	e.mu.Unlock()
 	if up != nil {
 		up.SetToken(pass.Token)
@@ -119,6 +128,52 @@ func (e *Engine) applyPass(pass *mozilla.ProxyPass, email string) {
 	select {
 	case e.renewKick <- struct{}{}:
 	default:
+	}
+}
+
+// quotaPollPeriod re-reads the server-side remaining data this often while
+// connected. A pass lives up to 30 minutes, and its quota headers are
+// frozen at fetch time, so the browser extension or another device eating
+// into the same account would otherwise stay invisible until the next
+// renewal.
+const quotaPollPeriod = 5 * time.Minute
+
+// quotaPollLoop refreshes the remaining data of the active account from
+// Mozilla while the connection is live.
+func (e *Engine) quotaPollLoop(ctx context.Context) {
+	t := time.NewTicker(quotaPollPeriod)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		email := e.Auth.ActiveEmail()
+		if email == "" {
+			continue
+		}
+		pass, err := e.passFor(email)
+		if err != nil {
+			if errors.Is(err, mozilla.ErrQuotaExceeded) {
+				e.Auth.MarkExhausted(email)
+				e.Log("warning", fmt.Sprintf("%s is out of data according to Mozilla", email))
+			} else if !errors.Is(err, ErrSessionExpired) {
+				e.Log("info", "could not refresh account data: "+err.Error())
+			}
+			continue
+		}
+		// Only apply when the server shows a different remaining amount
+		// than our live estimate, and the account still is the active one
+		// (a switch may have happened while the fetch was in flight).
+		if pass.QuotaLimit <= 0 || email != e.Auth.ActiveEmail() {
+			continue
+		}
+		limit, left := e.LiveQuota()
+		if limit != pass.QuotaLimit || left != pass.QuotaLeft {
+			e.applyPass(pass, email)
+			e.Log("info", fmt.Sprintf("data refreshed for %s (%s left)", email, quotaText(pass.QuotaLeft)))
+		}
 	}
 }
 
@@ -177,6 +232,36 @@ func (e *Engine) renewLoop(ctx context.Context) {
 		e.Log("info", fmt.Sprintf("proxy pass renewed for %s (%s left), valid until %s",
 			email, quotaText(pass.QuotaLeft), pass.Expires.Local().Format("15:04:05")))
 	}
+}
+
+// RefreshActiveQuota re-reads the server's authoritative remaining data for
+// the account in use. Mozilla counts every client of the account, so this
+// keeps the displayed number honest while other devices or browser
+// extensions consume the same data. Called periodically while connected.
+func (e *Engine) RefreshActiveQuota() {
+	e.mu.Lock()
+	st := e.state.Status
+	email := e.state.Account
+	e.mu.Unlock()
+	if (st != StatusConnected && st != StatusReconnecting) || email == "" {
+		return
+	}
+	pass, err := e.passFor(email)
+	if err != nil || pass.QuotaLimit <= 0 {
+		return
+	}
+	e.mu.Lock()
+	up := e.up
+	e.passLimit, e.passLeft = pass.QuotaLimit, pass.QuotaLeft
+	if up == nil {
+		e.passUpAt, e.passDownAt = 0, 0
+	} else {
+		e.passUpAt, e.passDownAt = up.Up.Load(), up.Down.Load()
+	}
+	e.mu.Unlock()
+	e.update(func(s *State) {
+		s.QuotaLimit, s.QuotaLeft = pass.QuotaLimit, pass.QuotaLeft
+	})
 }
 
 // UseAccount makes email the active account; a live connection moves to it

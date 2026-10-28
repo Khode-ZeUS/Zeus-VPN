@@ -16,6 +16,7 @@ import (
 	"zeusvpn/internal/killswitch"
 	"zeusvpn/internal/mozilla"
 	"zeusvpn/internal/store"
+	"zeusvpn/internal/usage"
 )
 
 // Platform plugs the host operating system into the API. Nil functions mean
@@ -95,6 +96,10 @@ type Stats struct {
 	Down     int64 `json:"down"`
 	UpRate   int64 `json:"upRate"`
 	DownRate int64 `json:"downRate"`
+	// Remaining monthly data, counted down live between server refreshes.
+	// QuotaLimit is 0 when unknown; the UI falls back to the snapshot then.
+	QuotaLimit int64 `json:"quotaLimit"`
+	QuotaLeft  int64 `json:"quotaLeft"`
 }
 
 type CityDTO struct {
@@ -110,7 +115,7 @@ type CountryDTO struct {
 
 // Version is the app version shown in the UI (keep in sync with wails.json
 // and the mobile projects).
-const Version = "1.1.0.6"
+const Version = "1.1.0.7"
 
 // Startup creates the engine; emit delivers events ("state", "stats",
 // "log", "notice") to the UI.
@@ -120,6 +125,8 @@ func Startup(a *App, emit func(event string, data any)) {
 	a.eng.OnState = func(core.State) { a.emitState() }
 	a.eng.OnLog = func(line string) { emit("log", line) }
 	a.eng.OnNotice = func(msg string) { emit("notice", msg) }
+	usage.LoadHosts()
+	usage.PruneHosts()
 	go a.statsLoop()
 	if a.eng.Auth.LoggedIn() {
 		go func() {
@@ -142,6 +149,7 @@ func Shutdown(a *App) {
 	if a.eng != nil {
 		a.disconnect()
 	}
+	usage.SaveHosts()
 }
 
 // Engine gives platform code access to the engine.
@@ -192,14 +200,35 @@ func (a *App) statsLoop() {
 	var lastUp, lastDown int64
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
-	for range t.C {
+	for tick := 0; ; tick++ {
+		<-t.C
 		up, down := a.traffic()
 		if up < lastUp || down < lastDown {
 			lastUp, lastDown = 0, 0
 		}
-		a.emit("stats", Stats{Up: up, Down: down, UpRate: up - lastUp, DownRate: down - lastDown})
+		limit, left := a.liveQuota()
+		a.emit("stats", Stats{Up: up, Down: down, UpRate: up - lastUp, DownRate: down - lastDown, QuotaLimit: limit, QuotaLeft: left})
 		lastUp, lastDown = up, down
+		// Every 5 minutes while connected, re-read the account's remaining
+		// data from Mozilla: other clients of the same account consume it too.
+		if tick%300 == 0 && tick > 0 && a.plat.External == nil {
+			go a.eng.RefreshActiveQuota()
+		}
+		if tick%60 == 0 && tick > 0 {
+			usage.SaveHosts()
+		}
 	}
+}
+
+// liveQuota is the remaining data of the connection in use, estimated
+// between server refreshes. Where the connection runs in another process
+// (iOS) the engine knows no counters, so unknown (0) is reported and the
+// UI falls back to the snapshot.
+func (a *App) liveQuota() (limit, left int64) {
+	if a.plat.External != nil || a.eng == nil {
+		return 0, 0
+	}
+	return a.eng.LiveQuota()
 }
 
 // fillMissingEmail names an account migrated from an old install.
@@ -364,6 +393,35 @@ func (a *App) GetServers(force bool) ([]CountryDTO, error) {
 }
 
 func (a *App) GetLatency() map[string]int { return a.eng.Latency() }
+
+// UsageEntry is one destination's traffic for the usage panel.
+type UsageEntry struct {
+	Host string `json:"host"`
+	Up   int64  `json:"up"`
+	Down int64  `json:"down"`
+	// Last is the unix time (seconds) of the latest traffic.
+	Last int64 `json:"last"`
+}
+
+// GetUsage lists the destinations the tunnelled data went to, largest
+// first (`limit <= 0` returns all). Counted where the tunnel streams
+// carry the bytes, so it works in every mode and on every platform.
+func (a *App) GetUsage(limit int) []UsageEntry {
+	entries := usage.TopHosts(limit)
+	out := make([]UsageEntry, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, UsageEntry{Host: e.Host, Up: e.Up, Down: e.Down, Last: e.Last})
+	}
+	return out
+}
+
+// GetAppUsage lists how much data each application sent and received
+// through Zeus VPN, heaviest first. Windows only (the per-app lookup needs
+// the OS TCP table); an empty list means unsupported or no data yet.
+func (a *App) GetAppUsage() []usage.App { return usage.ListApps() }
+
+// ResetUsage forgets the whole usage history (destinations and apps).
+func (a *App) ResetUsage() { usage.Reset() }
 
 // reconnectIfActive applies a changed setting to a live connection.
 func (a *App) reconnectIfActive() {

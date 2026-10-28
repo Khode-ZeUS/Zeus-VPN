@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 env:
-  VERSION: "1.1.0.6"
+  VERSION: "1.1.0.7"
   WAILS_VERSION: v2.16.0
   # Keep in step with golang.org/x/mobile in go.mod.
   GOMOBILE_VERSION: v0.0.0-20261011034528-197770444867

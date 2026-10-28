@@ -15,6 +15,10 @@ let lastQuotaRefresh = 0;
 let installedApps = null; // cached GetApps result
 let appMode = "all";      // pending per-app tunnel mode
 let selectedApps = [];    // pending selection (package ids)
+let usageData = null;     // last GetUsage result (refreshed live while open)
+let usageTimer = null;    // usage sheet refresh interval
+let usageApps = null;     // last GetAppUsage result (Windows)
+let expandedApp = null;   // the app whose destinations are shown
 
 const GLOBE = '<svg viewBox="0 0 24 24"><path d="M12 2l2.4 5.6L20 8.3l-4.3 4 1.2 6L12 15.4 7.1 18.3l1.2-6L4 8.3l5.6-.7Z"/></svg>';
 const CHEVRON = '<svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>';
@@ -25,7 +29,12 @@ function fmtBytes(n) {
   const u = ["B", "KB", "MB", "GB", "TB"];
   let i = 0;
   while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
-  return (i === 0 ? n : n.toFixed(n < 10 ? 1 : 0)) + " " + u[i];
+  // Keep the fractional part visible: MB 1 decimal, GB/TB 2 decimals
+  // (trailing zeros trimmed, e.g. 10.24 GB / 3.5 GB / 1 GB).
+  if (i === 0) return Math.round(n) + " B";
+  if (i === 1) return n.toFixed(n < 10 ? 1 : 0) + " KB";
+  if (i === 2) return String(+n.toFixed(1)) + " MB";
+  return String(+n.toFixed(2)) + " " + u[i];
 }
 function fmtDuration(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -83,6 +92,15 @@ function showView(id) {
   for (const v of $$(".view")) v.hidden = v.id !== id;
 }
 
+// ---------- in-app confirm (WebView2's native confirm() renders off-frame) ----------
+let confirmResolve = null;
+function askConfirm(message, title = "Are you sure?") {
+  $("#confirm-title").textContent = title;
+  $("#confirm-message").textContent = message;
+  $("#modal-confirm").hidden = false;
+  return new Promise((ok) => { confirmResolve = ok; });
+}
+
 // ---------- sheets & modals ----------
 function openSheet(id) {
   $("#scrim").hidden = false;
@@ -92,6 +110,8 @@ function closeSheets() {
   const appsOpen = !$("#sheet-apps").hidden;
   $("#scrim").hidden = true;
   for (const s of $$(".sheet")) s.hidden = true;
+  clearInterval(usageTimer);
+  usageTimer = null;
   // "Selected only"/"Except selected" need at least one app; an empty
   // selection reverts to tunnelling everything.
   if (appsOpen && appMode !== "all" && !selectedApps.length) {
@@ -291,6 +311,13 @@ function renderStats() {
   $("#rate-up").textContent = fmtBytes(lastStats.upRate) + "/s";
   $("#total-down").textContent = "Download · " + fmtBytes(lastStats.down);
   $("#total-up").textContent = "Upload · " + fmtBytes(lastStats.up);
+  // Live remaining data: the server's number minus what this connection
+  // moved since the last refresh, so sharing the account elsewhere is the
+  // only thing that changes it in between.
+  if (lastStats.quotaLimit > 0) {
+    $("#quota-text").textContent = `${fmtBytes(lastStats.quotaLeft)} left of ${fmtBytes(lastStats.quotaLimit)}`;
+    $("#quota-fill").style.width = Math.min(100, ((lastStats.quotaLimit - lastStats.quotaLeft) / lastStats.quotaLimit) * 100).toFixed(1) + "%";
+  }
 }
 
 function renderServers() {
@@ -381,6 +408,84 @@ function renderApps() {
         : '<span class="app-icon empty"></span>'}
       <span class="name"><b>${esc(a.name)}</b><small>${esc(a.id)}</small></span>
     </label>`).join("") || '<div class="list-msg">No matches</div>';
+}
+
+// ---------- data usage by destination ----------
+async function loadUsage() {
+  try {
+    usageData = await api().GetUsage(0);
+  } catch (e) {
+    usageData = [];
+  }
+  try {
+    usageApps = snap && snap.platform === "windows" ? await api().GetAppUsage() : [];
+  } catch (e) {
+    usageApps = [];
+  }
+  renderUsage();
+}
+
+function renderUsage() {
+  const list = $("#usage-list");
+  if (!usageData) return;
+  const q = $("#usage-search").value.trim().toLowerCase();
+  const sum = (k) => usageData.reduce((s, x) => s + x[k], 0);
+  $("#usage-total-down").textContent = fmtBytes(sum("down"));
+  $("#usage-total-up").textContent = fmtBytes(sum("up"));
+  $("#usage-total").textContent = fmtBytes(sum("down") + sum("up"));
+
+  let html = "";
+  const apps = usageApps || [];
+  if (apps.length) {
+    // Apps first; tap one to unfold the destinations it used.
+    for (const a of apps) {
+      if (q && !(a.name || "").toLowerCase().includes(q) && !a.hosts.some((h) => h.host.includes(q))) continue;
+      const open = expandedApp === a.name;
+      html += `
+      <button class="usage-row app" data-app="${esc(a.name)}">
+        <span class="name"><b>${esc(a.name)}</b><small>&darr; ${fmtBytes(a.down)} &middot; &uarr; ${fmtBytes(a.up)}${open ? " · " + a.hosts.length + " destinations" : ""}</small></span>
+        <span class="usage-total">${fmtBytes(a.up + a.down)}<span class="chev ${open ? "open" : ""}">${CHEVRON}</span></span>
+      </button>`;
+      if (open) {
+        const hosts = a.hosts.filter((h) => !q || h.host.includes(q));
+        const max = Math.max(...hosts.map((h) => h.up + h.down), 1);
+        html += hosts.map((h) => `
+        <div class="usage-row sub">
+          <span class="name"><b title="${esc(h.host)}">${esc(h.host)}</b><small>&darr; ${fmtBytes(h.down)} &middot; &uarr; ${fmtBytes(h.up)}</small>
+            <span class="mini-bar"><i style="width:${Math.max(3, ((h.up + h.down) / max) * 100).toFixed(1)}%"></i></span></span>
+          <span class="usage-total">${fmtBytes(h.up + h.down)}</span>
+        </div>`).join("") || '<div class="usage-row sub"><span class="name"><small>No matches</small></span></div>';
+      }
+    }
+  } else {
+    // Platforms without per-app lookup: flat destinations.
+    const rows = usageData.filter((x) => !q || x.host.toLowerCase().includes(q));
+    const max = Math.max(...rows.map((x) => x.up + x.down), 1);
+    html = rows.map((x) => `
+      <div class="usage-row">
+        <span class="name"><b title="${esc(x.host)}">${esc(x.host)}</b><small>&darr; ${fmtBytes(x.down)} &middot; &uarr; ${fmtBytes(x.up)}</small>
+          <span class="mini-bar"><i style="width:${Math.max(3, ((x.up + x.down) / max) * 100).toFixed(1)}%"></i></span></span>
+        <span class="usage-total">${fmtBytes(x.up + x.down)}</span>
+      </div>`).join("");
+  }
+  if (!html) {
+    html = `<div class="list-msg">${(usageData.length || apps.length) ? "No matches" : 'No data usage recorded yet.<br><small class="muted">Connect and use apps — their usage appears here.</small>'}</div>`;
+  }
+  // Keep the scroll position: the list refreshes live while the sheet is open.
+  const at = list.scrollTop;
+  list.innerHTML = html;
+  list.scrollTop = at;
+}
+
+function openUsageSheet() {
+  $("#usage-search").value = "";
+  usageData = null;
+  expandedApp = null;
+  openSheet("sheet-usage");
+  $("#usage-list").innerHTML = '<div class="list-msg">Loading…</div>';
+  loadUsage();
+  clearInterval(usageTimer);
+  usageTimer = setInterval(loadUsage, 4000); // stay live while open
 }
 
 // ---------- data ----------
@@ -650,6 +755,28 @@ function wire() {
     refreshSnapshot();
   };
 
+  $("#btn-usage").onclick = () => openUsageSheet();
+  $("#usage-search").oninput = renderUsage;
+  $("#usage-list").onclick = (e) => {
+    const row = e.target.closest("[data-app]");
+    if (!row) return;
+    expandedApp = expandedApp === row.dataset.app ? null : row.dataset.app;
+    renderUsage();
+  };
+  $("#btn-usage-reset").onclick = async () => {
+    if (!(await askConfirm("Clear the usage history?", "Clear usage history"))) return;
+    try {
+      await api().ResetUsage();
+      usageData = [];
+      usageApps = [];
+      expandedApp = null;
+      renderUsage();
+      toast("Usage history cleared");
+    } catch (err) {
+      toast(errText(err));
+    }
+  };
+
   $("#btn-add-account").onclick = () => {
     addingAccount = true;
     closeSheets();
@@ -666,7 +793,7 @@ function wire() {
         toast("Now using " + use.dataset.use);
       } else if (rm) {
         const email = rm.dataset.remove;
-        if (!confirm(`Sign out of ${email || "this account"}?`)) return;
+        if (!(await askConfirm(`Sign out of ${email || "this account"}?`, "Sign out"))) return;
         await api().RemoveAccount(email);
         await refreshSnapshot();
         if (!snap.loggedIn) {
@@ -705,9 +832,26 @@ function wire() {
     }
   };
   $("#modal-admin").onclick = (e) => { if (e.target.id === "modal-admin") $("#modal-admin").hidden = true; };
+  $("#btn-confirm-yes").onclick = () => { $("#modal-confirm").hidden = true; if (confirmResolve) confirmResolve(true); confirmResolve = null; };
+  $("#btn-confirm-no").onclick = () => { $("#modal-confirm").hidden = true; if (confirmResolve) confirmResolve(false); confirmResolve = null; };
+  $("#modal-confirm").onclick = (e) => {
+    if (e.target.id === "modal-confirm") {
+      $("#modal-confirm").hidden = true;
+      if (confirmResolve) confirmResolve(false);
+      confirmResolve = null;
+    }
+  };
 
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") { closeSheets(); $("#modal-admin").hidden = true; }
+    if (e.key === "Escape") {
+      closeSheets();
+      $("#modal-admin").hidden = true;
+      if (!$("#modal-confirm").hidden) {
+        $("#modal-confirm").hidden = true;
+        if (confirmResolve) confirmResolve(false);
+        confirmResolve = null;
+      }
+    }
   });
   document.addEventListener("contextmenu", (e) => {
     if (!e.target.closest("input, .logs")) e.preventDefault();

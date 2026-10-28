@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -75,6 +76,16 @@ type Engine struct {
 	passMu      sync.Mutex
 	passExpires time.Time
 	renewKick   chan struct{}
+
+	// Quota as of the moment the active pass was issued, with the tunnel's
+	// traffic counters at that moment: the server only reports its numbers
+	// when a pass is fetched, so LiveQuota subtracts the traffic the
+	// connection has moved since (other clients of the same account are
+	// picked up by the next server refresh).
+	passLimit  int64
+	passLeft   int64
+	passUpAt   int64
+	passDownAt int64
 
 	OnState  func(State)
 	OnLog    func(string)
@@ -290,31 +301,108 @@ func (e *Engine) Latency() map[string]int {
 	return out
 }
 
+// probeBudget bounds one latency probe, including a fragmented-handshake
+// retry. It is generous because filtered networks resolve and handshake
+// slowly, and the probe must not time out while a real connection would
+// succeed.
+const probeBudget = 12 * time.Second
+
 // probeLatency measures a full TCP + TLS handshake (the same path a real
 // connection takes, TLS ClientHello fragmentation included) and reports the
-// elapsed milliseconds, or -1 when the server cannot be reached.
+// elapsed milliseconds, or -1 when the server cannot be reached. DNS is
+// resolved beforehand and not part of the measured time.
 func probeLatency(ep mozilla.Endpoint) int {
 	host, portStr, err := net.SplitHostPort(ep.Addr())
 	if err != nil {
 		return -1
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), probeBudget)
 	defer cancel()
 	ips, err := netx.LookupHost(ctx, host)
 	if err != nil || len(ips) == 0 {
 		return -1
 	}
+	// Addresses are raced, each 300 ms after the previous one: some
+	// addresses of a server can be blackholed while others answer (the
+	// same trick netx.DialResolved applies to real connections).
+	type attempt struct {
+		ms   int
+		conn net.Conn
+	}
+	results := make(chan attempt, len(ips))
+	for i, ip := range ips {
+		go func(i int, ip netip.Addr) {
+			select {
+			case <-time.After(time.Duration(i) * 300 * time.Millisecond):
+			case <-ctx.Done():
+				results <- attempt{0, nil}
+				return
+			}
+			ms, conn, err := probeHandshake(ctx, host, ip.String(), portStr)
+			if err == nil {
+				results <- attempt{ms, conn}
+			} else {
+				results <- attempt{0, nil}
+			}
+		}(i, ip)
+	}
+	var ms = -1
+	var live net.Conn
+	for landed := 0; landed < len(ips); landed++ {
+		select {
+		case a := <-results:
+			if a.conn != nil {
+				if live == nil {
+					ms, live = a.ms, a.conn
+				} else {
+					a.conn.Close() // first success wins; close the rest
+				}
+			}
+		case <-ctx.Done():
+			landed = len(ips) // the rest fail on their own and close themselves
+		}
+	}
+	if live != nil {
+		live.Close()
+	}
+	return ms
+}
+
+// probeHandshake opens one TCP connection and completes the TLS handshake,
+// measuring the elapsed time. If the plain attempt is cut off (filtered
+// server, e.g. Canada) it is retried with the ClientHello fragmented
+// (SplitSNI) — exactly what Upstream.newConn does for real connections — so
+// pings do not time out while connections succeed. DNS is resolved by the
+// caller and is not part of the measured time.
+func probeHandshake(ctx context.Context, host, ipStr, portStr string) (int, net.Conn, error) {
 	start := time.Now()
-	conn, err := netx.DialContext(ctx, "tcp", net.JoinHostPort(ips[0].String(), portStr))
+	dialAndShake := func() (net.Conn, error) {
+		conn, err := netx.DialContext(ctx, "tcp", net.JoinHostPort(ipStr, portStr))
+		if err != nil {
+			return nil, err
+		}
+		tc := tls.Client(conn, &tls.Config{ServerName: host, NextProtos: []string{"h2"}, MinVersion: tls.VersionTLS12})
+		if err := tc.HandshakeContext(ctx); err != nil {
+			conn.Close()
+			return nil, err
+		}
+		return tc, nil
+	}
+	conn, err := dialAndShake()
+	if err == nil {
+		return int(time.Since(start).Milliseconds()), conn, nil
+	}
+	// The plain attempt failed (dial or TLS handshake). Mark the host so the
+	// retry uses ClientHello fragmentation, then try once more.
+	netx.MarkBlocked(host)
+	if ctx.Err() != nil {
+		return 0, nil, err
+	}
+	conn, err = dialAndShake()
 	if err != nil {
-		return -1
+		return 0, nil, err
 	}
-	defer conn.Close()
-	tc := tls.Client(conn, &tls.Config{ServerName: host, NextProtos: []string{"h2"}, MinVersion: tls.VersionTLS12})
-	if err := tc.HandshakeContext(ctx); err != nil {
-		return -1
-	}
-	return int(time.Since(start).Milliseconds())
+	return int(time.Since(start).Milliseconds()), conn, nil
 }
 
 // Connect starts the connection in the background; progress arrives via OnState.
@@ -352,6 +440,7 @@ func (e *Engine) Connect() {
 		}
 		go e.renewLoop(ctx)
 		go e.healthLoop(ctx)
+		go e.quotaPollLoop(ctx)
 		go e.verifyExit(ctx)
 	}()
 }
@@ -554,6 +643,24 @@ func (e *Engine) Traffic() (up, down int64) {
 		return 0, 0
 	}
 	return u.Up.Load(), u.Down.Load()
+}
+
+// LiveQuota estimates the remaining monthly data of the account in use.
+// The server's numbers are only re-read every few minutes (with each proxy
+// pass), so the bytes this connection has moved since the last fetch are
+// subtracted here: the counter counts down live instead of staying frozen
+// at the value of the last renewal.
+func (e *Engine) LiveQuota() (limit, left int64) {
+	e.mu.Lock()
+	limit, left, upAt, downAt := e.passLimit, e.passLeft, e.passUpAt, e.passDownAt
+	u := e.up
+	e.mu.Unlock()
+	if left > 0 && u != nil {
+		if used := u.Up.Load() - upAt + u.Down.Load() - downAt; used > 0 {
+			left = max(left-used, 0)
+		}
+	}
+	return limit, left
 }
 
 func (e *Engine) teardown() {

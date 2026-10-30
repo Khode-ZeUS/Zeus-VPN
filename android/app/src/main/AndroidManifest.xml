@@ -55,6 +55,11 @@
                 android:value="true" />
         </service>
 
+        <activity
+            android:name=".WebLoginActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
+            android:exported="false" />
+
         <receiver
             android:name=".BootReceiver"
             android:exported="false">

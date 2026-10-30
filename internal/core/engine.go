@@ -634,6 +634,12 @@ func (e *Engine) verifyExit(ctx context.Context) {
 	})
 }
 
+// SetError shows a message in the banner (web sign-in failures land here,
+// since the app page has just reloaded and missed the live events).
+func (e *Engine) SetError(msg string) {
+	e.update(func(s *State) { s.Error = msg })
+}
+
 // Traffic returns total bytes sent and received through the tunnel.
 func (e *Engine) Traffic() (up, down int64) {
 	e.mu.Lock()

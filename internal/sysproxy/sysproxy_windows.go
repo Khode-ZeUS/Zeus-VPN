@@ -57,6 +57,45 @@ type config struct {
 	autoURL string
 }
 
+// SystemProxy returns the currently configured WinINet proxy as
+// "host:port" (false when direct or unset). The control plane uses it as a
+// last-resort fallback so sign-ins work on networks where Mozilla's edge
+// blocks the direct path.
+func SystemProxy() (string, bool) {
+	c, err := getConfig()
+	if err != nil || c.flags&proxyTypeProxy == 0 {
+		return "", false
+	}
+	server := strings.TrimSpace(c.server)
+	if server == "" {
+		return "", false
+	}
+	// WinINET may list per-scheme proxies ("http=...;https=..."); prefer https.
+	if strings.Contains(server, "=") {
+		picked := ""
+		for _, part := range strings.Split(server, ";") {
+			k, v, ok := strings.Cut(strings.TrimSpace(part), "=")
+			if !ok || v == "" {
+				continue
+			}
+			if k == "https" {
+				picked = v
+				break
+			}
+			if k == "http" && picked == "" {
+				picked = v
+			}
+		}
+		server = picked
+	}
+	server = strings.TrimPrefix(server, "http://")
+	server = strings.TrimPrefix(server, "https://")
+	if server == "" {
+		return "", false
+	}
+	return server, true
+}
+
 func setConfig(c config) error {
 	opts := []perConnOption{
 		{option: perConnFlags, value: uintptr(c.flags)},

@@ -43,6 +43,17 @@ final class WebViewController: UIViewController, WKScriptMessageHandler, WKNavig
         else { return }
         let args = msg["args"] ?? []
         let argsJSON = (try? JSONSerialization.data(withJSONObject: args)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        if method == "StartWebLogin" {
+            // Web sign-in runs in a native WKWebView (the FxA page hands the
+            // session over through its WebChannel).
+            DispatchQueue.main.async {
+                let vc = WebLoginViewController()
+                vc.modalPresentationStyle = .fullScreen
+                self.present(vc, animated: true)
+            }
+            self.resolve(id, ok: true, "null")
+            return
+        }
         queue.async {
             var error: NSError?
             let result = ZeuscoreCall(method, argsJSON, &error)

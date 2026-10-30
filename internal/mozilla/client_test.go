@@ -64,3 +64,32 @@ func TestViaTunnelSkipsTunnelOnSuccess(t *testing.T) {
 		t.Fatal("tunnel used although direct worked")
 	}
 }
+
+// A bare 406 from the direct path must be retried through the tunnel: the
+// edge block is per-IP, and the tunnel's exit may not be blocked.
+func TestViaTunnelRetries406ThroughTunnel(t *testing.T) {
+	tunnelHits := 0
+	tun := roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		tunnelHits++
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"access_token":"t"}`)), Header: make(http.Header)}, nil
+	})
+	direct := roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 406, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
+	})
+	rt := viaTunnel{direct: direct, tunnel: func() http.RoundTripper { return tun }, systemProxy: func() http.RoundTripper { return nil }}
+	req, _ := http.NewRequest("POST", "https://api.accounts.firefox.com/v1/account/login", strings.NewReader(`{}`))
+	resp, err := rt.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("expected the tunnel's 200, got %d", resp.StatusCode)
+	}
+	if tunnelHits != 1 {
+		t.Fatalf("tunnel used %d times, want 1", tunnelHits)
+	}
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

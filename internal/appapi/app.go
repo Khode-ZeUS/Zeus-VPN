@@ -115,7 +115,7 @@ type CountryDTO struct {
 
 // Version is the app version shown in the UI (keep in sync with wails.json
 // and the mobile projects).
-const Version = "1.1.0.7"
+const Version = "1.1.0.8"
 
 // Startup creates the engine; emit delivers events ("state", "stats",
 // "log", "notice") to the UI.
@@ -130,10 +130,26 @@ func Startup(a *App, emit func(event string, data any)) {
 	go a.statsLoop()
 	if a.eng.Auth.LoggedIn() {
 		go func() {
+			a.restoreSessions()
 			a.fillMissingEmail()
 			a.RefreshQuotas()
 		}()
 	}
+}
+
+// restoreSessions quietly renews every stored account whose token expired,
+// so existing users never see the sign-in screen again unless Mozilla
+// actually rejected their session.
+func (a *App) restoreSessions() {
+	for _, acc := range a.eng.Auth.Accounts() {
+		if acc.NeedsLogin {
+			continue
+		}
+		if _, err := a.eng.Auth.AccessToken(acc.Email, false); err == nil {
+			a.eng.Log("info", "session restored for "+acc.Email)
+		}
+	}
+	a.emitState()
 }
 
 // AutoConnect connects on launch when asked to (force) or when the user
@@ -151,6 +167,9 @@ func Shutdown(a *App) {
 	}
 	usage.SaveHosts()
 }
+
+// Log writes a line into the app log (and the logs view).
+func (a *App) Log(level, msg string) { a.eng.Log(level, msg) }
 
 // Engine gives platform code access to the engine.
 func Engine(a *App) *core.Engine { return a.eng }
@@ -292,34 +311,37 @@ func (a *App) GetSnapshot() Snapshot {
 	}
 }
 
-func (a *App) afterLogin(step *core.LoginStep, err error) (*core.LoginStep, error) {
+// CompleteWebLogin stores the account from the web sign-in flow: the FxA
+// page handed the session over, and the app exchanged it for tokens.
+func (a *App) CompleteWebLogin(email, sessionToken string) error {
+	tok, err := mozilla.CompleteWebLogin(sessionToken)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if step.Step == "done" {
-		a.emitState()
-		go a.RefreshQuotas()
+	if email == "" {
+		if p, perr := mozilla.FetchProfile(tok.AccessToken); perr == nil {
+			email = p.Email
+		}
 	}
-	return step, nil
+	if err := a.eng.Auth.AddWebAccount(email, tok); err != nil {
+		return err
+	}
+	a.eng.Log("info", "signed in as "+email+" (web sign-in)")
+	a.emitState()
+	go a.RefreshQuotas()
+	return nil
 }
 
-func (a *App) Login(email, password string) (*core.LoginStep, error) {
-	return a.afterLogin(a.eng.Auth.Login(email, password))
+// WebLoginFinished reports the outcome of a web sign-in to the UI. The
+// webview is already back on the app page by the time this runs.
+func (a *App) WebLoginFinished(email string, err error) {
+	if err != nil {
+		a.eng.Log("warning", "web sign-in failed: "+err.Error())
+		a.eng.SetError("Web sign-in failed: " + err.Error())
+		return
+	}
+	a.emitState()
 }
-
-func (a *App) VerifyCode(code string) (*core.LoginStep, error) {
-	return a.afterLogin(a.eng.Auth.VerifyCode(code))
-}
-
-func (a *App) ConfirmLink() (*core.LoginStep, error) {
-	return a.afterLogin(a.eng.Auth.ConfirmLink())
-}
-
-func (a *App) SubmitUnblock(code string) (*core.LoginStep, error) {
-	return a.afterLogin(a.eng.Auth.SubmitUnblock(code))
-}
-
-func (a *App) CancelLogin() { a.eng.Auth.CancelLogin() }
 
 func active(st string) bool {
 	return st == core.StatusConnected || st == core.StatusReconnecting

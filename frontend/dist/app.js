@@ -191,7 +191,7 @@ function render() {
   if (!snap.loggedIn || addingAccount) {
     $("#login-cancel").hidden = !snap.loggedIn;
     $("#login-subtitle").textContent = snap.loggedIn ? "Add another Mozilla account" : "Sign in with your Mozilla account";
-    if ($("#view-verify").hidden) showView("view-login");
+    showView("view-login");
     return;
   }
   showView("view-home");
@@ -555,36 +555,14 @@ async function elevate() {
   }
 }
 
-let loginStep = null;
-function showVerify(step) {
-  loginStep = step.step;
-  const titles = { code: "Check your email", link: "Confirm sign-in", unblock: "Unblock sign-in" };
-  $("#verify-title").textContent = titles[step.step] || "Verify";
-  $("#verify-msg").textContent = step.message;
-  $("#verify-code").hidden = step.step === "link";
-  $("#verify-code").value = "";
-  $("#verify-submit span").textContent = step.step === "link" ? "I've confirmed" : "Verify";
-  $("#verify-error").textContent = "";
-  showView("view-verify");
-  if (step.step !== "link") setTimeout(() => $("#verify-code").focus(), 50);
-}
-
-async function handleStep(step) {
-  if (step.step === "done") {
-    const added = addingAccount;
-    addingAccount = false;
-    $("#view-verify").hidden = true;
-    $("#login-password").value = "";
-    $("#login-email").value = "";
-    await refreshSnapshot();
-    if (added) {
-      openSheet("sheet-settings");
-      toast("Account added");
-    } else {
-      loadServers(false);
-    }
-  } else {
-    showVerify(step);
+// ---------- web sign-in (the API password route is edge-blocked) ----------
+async function startWebLogin() {
+  try { localStorage.setItem("zeusAppURL", location.origin + location.pathname); } catch (e) {}
+  $("#login-error").textContent = "Opening the Firefox sign-in page…";
+  try {
+    await api().StartWebLogin(localStorage.getItem("zeusAppURL") || (location.origin + location.pathname));
+  } catch (e) {
+    $("#login-error").textContent = errText(e);
   }
 }
 
@@ -593,53 +571,15 @@ function wire() {
   $("#btn-min").onclick = () => window.runtime.WindowMinimise();
   $("#btn-close").onclick = () => window.runtime.Quit();
 
-  $("#toggle-pw").onclick = () => {
-    const i = $("#login-password");
-    i.type = i.type === "password" ? "text" : "password";
-  };
+  $("#orb").onclick = toggleConnection;
   $("#link-signup").onclick = (e) => { e.preventDefault(); api().OpenURL("https://accounts.firefox.com/signup"); };
-
-  $("#login-form").onsubmit = async (e) => {
-    e.preventDefault();
-    const btn = $("#login-submit");
-    $("#login-error").textContent = "";
-    setLoading(btn, true);
-    try {
-      await handleStep(await api().Login($("#login-email").value, $("#login-password").value));
-    } catch (err) {
-      $("#login-error").textContent = errText(err);
-    } finally {
-      setLoading(btn, false);
-    }
-  };
-
-  $("#verify-form").onsubmit = async (e) => {
-    e.preventDefault();
-    const btn = $("#verify-submit");
-    $("#verify-error").textContent = "";
-    setLoading(btn, true);
-    try {
-      const code = $("#verify-code").value;
-      const step = loginStep === "link" ? await api().ConfirmLink()
-        : loginStep === "unblock" ? await api().SubmitUnblock(code)
-        : await api().VerifyCode(code);
-      await handleStep(step);
-    } catch (err) {
-      $("#verify-error").textContent = errText(err);
-    } finally {
-      setLoading(btn, false);
-    }
-  };
-  $("#verify-back").onclick = () => showView("view-login");
+  $("#login-web").onclick = startWebLogin;
   $("#login-cancel").onclick = () => {
     addingAccount = false;
-    api().CancelLogin();
     $("#login-error").textContent = "";
     render();
-    openSheet("sheet-settings");
+    if (snap.loggedIn) openSheet("sheet-settings");
   };
-
-  $("#orb").onclick = toggleConnection;
   for (const b of $$("#mode-switch button")) {
     b.onclick = async () => {
       const m = b.dataset.mode;
@@ -782,7 +722,6 @@ function wire() {
     closeSheets();
     $("#login-error").textContent = "";
     render();
-    setTimeout(() => $("#login-email").focus(), 50);
   };
   $("#account-list").onclick = async (e) => {
     const use = e.target.closest("[data-use]");

@@ -35,7 +35,8 @@ type MixedServer struct {
 }
 
 func ListenMixed(addr string, dial DialFunc, forward RoundTripFunc, log func(string)) (*MixedServer, error) {
-	ln, err := net.Listen("tcp", addr)
+	lc := net.ListenConfig{Control: controlListener}
+	ln, err := lc.Listen(context.Background(), "tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("could not open local proxy port %s: %w", addr, err)
 	}

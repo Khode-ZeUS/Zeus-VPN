@@ -149,6 +149,12 @@ class MainActivity : Activity() {
                 resolve(id, true, installedApps().toString())
                 return
             }
+            // Web sign-in runs in a native WebView (the FxA page hands the
+            // session over through its WebChannel).
+            if (method == "StartWebLogin") {
+                startActivity(android.content.Intent(this, WebLoginActivity::class.java))
+                return resolve(id, true, "null")
+            }
             resolve(id, true, Core.call(method, args.toString()))
         } catch (e: Exception) {
             resolve(id, false, e.message ?: e.toString())

@@ -142,6 +142,28 @@ func (a *Auth) SetEmail(old, email string) {
 	a.saveLocked()
 }
 
+// AddWebAccount stores an account signed in through the web login flow
+// (the FxA page hands the session over; the API password-login route is
+// edge-blocked). The email comes from the page or the FxA profile.
+func (a *Auth) AddWebAccount(email string, t *mozilla.TokenResponse) error {
+	email = cleanEmail(email)
+	if email == "" {
+		return errors.New("the sign-in page did not reveal the account's email")
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	acc := a.accs.Find(email)
+	if acc == nil {
+		a.accs.List = append(a.accs.List, store.Account{Email: email})
+		acc = a.accs.Find(email)
+	}
+	acc.Tokens = tokensFrom(t)
+	acc.NeedsLogin = false
+	a.accs.Active = email
+	a.saveLocked()
+	return nil
+}
+
 // AccessToken returns a valid OAuth access token for the account ("" =
 // active one), refreshing it when expired or when force is set.
 func (a *Auth) AccessToken(email string, force bool) (string, error) {

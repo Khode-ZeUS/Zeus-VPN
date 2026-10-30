@@ -13,3 +13,7 @@ func Enable(addr string, bypassIran, bypassLAN bool) error {
 }
 
 func Restore() error { return nil }
+
+// SystemProxy is a no-op here: the mobile apps run in Full VPN mode, where
+// the OS routes traffic into the tunnel and no system proxy exists.
+func SystemProxy() (string, bool) { return "", false }

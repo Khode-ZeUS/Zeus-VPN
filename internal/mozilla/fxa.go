@@ -2,6 +2,7 @@ package mozilla
 
 import (
 	"bytes"
+	"context"
 	"crypto/hkdf"
 	"crypto/hmac"
 	"crypto/pbkdf2"
@@ -10,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -151,8 +153,19 @@ func fxaDo(method, path, sessionToken string, payload any) (map[string]any, erro
 		if resp.StatusCode != 406 {
 			break
 		}
+		if !strings.Contains(string(respBody), "_fs-ch-") {
+			// A bare 406 is a hard edge block with no challenge to solve —
+			// the network path itself is refused; solving cannot help.
+			break
+		}
 		if err := solveFastlyChallenge(c); err != nil {
 			return nil, fmt.Errorf("Mozilla anti-bot check failed: %w", err)
+		}
+	}
+	if resp.StatusCode == 406 {
+		return nil, &FxaError{
+			Message: "Mozilla's edge refused this sign-in from your network. Connect any other VPN or proxy tool (its proxy is picked up automatically), or use a different network, then try again.",
+			Status:  406,
 		}
 	}
 	if resp.StatusCode >= 400 {
@@ -220,6 +233,41 @@ func OAuthToken(sessionToken string) (*TokenResponse, error) {
 		return nil, err
 	}
 	return tokenFrom(data, ""), nil
+}
+
+// ProbeContentServer checks whether the sign-in page is reachable on the
+// current network path (the webview loading the page sees the same result).
+func ProbeContentServer(ctx context.Context) error {
+	req, _ := http.NewRequestWithContext(ctx, "GET", "https://accounts.firefox.com/", nil)
+	applyHeaders(req.Header)
+	resp, err := Client().Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
+}
+
+// CompleteWebLogin turns a session token handed over by the FxA web login
+// page into OAuth tokens. The fxa-credentials grant runs on /oauth/token,
+// which — unlike the password-login route — is not edge-blocked. Transient
+// failures are retried: the user has just completed a sign-in and should
+// not be sent back to the form for a network hiccup.
+func CompleteWebLogin(sessionToken string) (*TokenResponse, error) {
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		t, err := OAuthToken(sessionToken)
+		if err == nil {
+			return t, nil
+		}
+		var fe *FxaError
+		if errors.As(err, &fe) && fe.Status >= 400 && fe.Status < 500 {
+			return nil, err // Mozilla rejected the session itself
+		}
+		lastErr = err
+		time.Sleep(time.Duration(attempt+1) * time.Second)
+	}
+	return nil, lastErr
 }
 
 func RefreshToken(refresh string) (*TokenResponse, error) {

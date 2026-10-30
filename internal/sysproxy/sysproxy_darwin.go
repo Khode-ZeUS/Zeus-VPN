@@ -216,3 +216,7 @@ func Restore() error {
 	store.ClearProxyBackup()
 	return errors.Join(errs...)
 }
+
+// SystemProxy is not implemented on darwin: the control-plane fallback only
+// applies on Windows for now.
+func SystemProxy() (string, bool) { return "", false }

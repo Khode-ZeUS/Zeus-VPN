@@ -1,4 +1,7 @@
+import Foundation
+import UIKit
 import WebKit
+import Zeuscore
 
 /// Signs in on the Firefox Accounts web page. The API password-login route is
 /// edge-blocked (HTTP 406), but the page signs in on its own origin and hands

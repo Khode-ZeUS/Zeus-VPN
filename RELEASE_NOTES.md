@@ -2,12 +2,11 @@
 
 ## What's new
 
-- **Fixed the HTTP 406 error that blocked signing in.** Mozilla's servers now refuse the old direct sign-in method for every client, so the sign-in flow has changed: **the Sign in button opens Mozilla's official sign-in page inside the app window**, where you enter your email, password and two-factor code as usual — and come back signed in. The old email/password form was removed along with it.
-- **Fixed the handover after the page confirms the sign-in** — the session now actually reaches the app on every platform (Windows, Android, iOS), so you come back signed in instead of stranded on an error page.
-- **Fixed reconnecting immediately after a disconnect** failing with a "port already in use" error.
+- **Signing in works again, on every platform.** Mozilla's servers refuse the old direct sign-in method for plain clients, so the app now answers Mozilla's edge check by itself: on **Windows and Linux the Sign in button opens Mozilla's official sign-in page inside the app window** (email, password and two-factor code as usual — and you come back signed in), while **on Android and iOS you sign in with a simple email/password form right in the app** — no web page needed. If Mozilla asks for an emailed code or a safety unblock code, the form walks you through it.
 - **Adding a second account while connected** now works reliably: the sign-in goes through the active tunnel.
+- **Fixed reconnecting immediately after a disconnect** failing with a "port already in use" error.
 - **Existing accounts are restored silently at startup** — if your session only needed a token refresh, you no longer see the sign-in screen at all.
-- On networks where Mozilla's sign-in page cannot load directly, the app picks up a system-configured proxy (another VPN tool) automatically as a fallback.
+- On networks where Mozilla's endpoints cannot be reached directly, the app falls back to the VPN tunnel or a system-configured proxy (another VPN tool) automatically.
 
 Everything from earlier releases is on board: the data usage panel, honest server pings, live remaining-data refresh, and release-signed Android builds.
 
@@ -26,11 +25,11 @@ Everything from earlier releases is on board: the data usage panel, honest serve
 
 ## راهنمای فارسی
 
-- **خطای 406 موقع ورود رفع شد.** روش ورود عوض شده: دکمه‌ی ورود، صفحه‌ی رسمی لاگین موزیلا را داخل همان پنجره‌ی برنامه باز می‌کند؛ ایمیل، رمز و تأیید دومرحله‌ای را همان‌جا وارد کنید و بدون کاری اضافه برمی‌گردید. فرم قدیمی ایمیل/رمز حذف شده است.
-- **تحویل نتیجه‌ی لاگین بعد از تأیید صفحه هم رفع شد** — نشست حالا روی همه‌ی پلتفرم‌ها (ویندوز، اندروید، iOS) واقعاً به برنامه می‌رسد و به‌جای صفحه‌ی خطا، وارد‌شده برمی‌گردید.
-- **رفع مشکل وصل‌شدن مجدد بعد از قطع** (خطای اشغال بودن پورت).
+- **ورود دوباره کار می‌کند — روی همه‌ی پلتفرم‌ها.** سرورهای موزیلا روش مستقیم قبلی را برای کلاینت‌های معمولی می‌بندند؛ حالا برنامه خودش پاسخ چالش لبه‌ی موزیلا را می‌دهد: روی **ویندوز و لینوکس** دکمه‌ی ورود، صفحه‌ی رسمی لاگین موزیلا را داخل همان پنجره باز می‌کند، و روی **اندروید و iOS** با یک فرم ساده‌ی ایمیل/رمز داخل خود برنامه وارد می‌شوید — بدون صفحه‌ی وب. اگر موزیلا کد ایمیلی یا کد امنیتی بخواهد، همان فرم مرحله‌به‌مرحله راهنمایی می‌کند.
 - **افزودن اکانت دوم در حالت اتصال‌دار** حالا از داخل تونل انجام می‌شود و درست کار می‌کند.
+- **رفع مشکل وصل‌شدن مجدد بعد از قطع** (خطای اشغال بودن پورت).
 - اکانت‌های قبلی موقع باز شدن برنامه بی‌صدا تمدید می‌شوند و دیگر صفحه‌ی لاگین را نمی‌بینید.
+- روی شبکه‌هایی که سرورهای موزیلا مستقیم باز نمی‌شوند، برنامه خودش از تونل یا پروکسی سیستم (ابزار VPN دیگر) استفاده می‌کند.
 - نسخه‌های **مک و iOS هنوز بتا** هستند.
 
 ---

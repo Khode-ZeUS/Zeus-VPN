@@ -8,7 +8,6 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.webkit.WebViewCompat
-import androidx.webkit.WebViewFeature
 import org.json.JSONObject
 
 /**
@@ -29,91 +28,85 @@ class WebLoginActivity : Activity() {
         private val SESSION_TOKEN_HEX = Regex("^[0-9a-f]{64}$")
 
         /**
-         * TEMPORARY on-page diagnostic panel for the sign-in freeze: logs the
-         * WebChannel traffic, every network call (with its status — a stalled
-         * call is the freeze fingerprint), SPA navigations, deliveries and JS
-         * errors. Tap the panel to expand it. Remove once the flow is fixed.
+         * TEMPORARY on-page diagnostic panel for the mobile sign-in freeze:
+         * logs the boot user agent, WebChannel traffic, every network call
+         * (a call without a "->" line is the stalled one), SPA navigations,
+         * rAF liveness and JS errors. Collapsed to a small bar; tap to
+         * expand. Remove once the flow is confirmed fixed.
          */
         private const val DEBUG_OVERLAY_JS = """
 (function(){
 if (window.__zdbg) return; window.__zdbg = true;
+var T0 = Date.now();
+var t = function(){ return ((Date.now() - T0) / 1000).toFixed(1); };
 window.__zdbgLines = [];
-var render = function(){ try {
-  var el = document.getElementById('__zdbg');
-  if (el) el.textContent = window.__zdbgLines.slice(-9).join('\n');
-} catch(e){} };
-var log = function(s){ try {
-  window.__zdbgLines.push(Math.floor(performance.now()/1000) + ' ' + s);
-  render();
-} catch(e){} };
+var el = null;
+var render = function(){ try { if (el) el.textContent = window.__zdbgLines.slice(-30).join('\n'); } catch(e){} };
+var log = function(s){ try { window.__zdbgLines.push(t() + ' ' + s); render(); } catch(e){} };
 var boot = function(){ try {
   if (document.getElementById('__zdbg')) return;
-  var d = document.createElement('div');
-  d.id = '__zdbg';
-  d.style.cssText = 'position:fixed;left:4px;bottom:4px;z-index:2147483646;max-width:96vw;' +
-    'padding:6px 8px;border-radius:8px;background:rgba(0,0,0,.82);color:#7fff9e;' +
-    'font:10px/1.35 monospace;white-space:pre-wrap;overflow:hidden;max-height:22vh;';
-  d.textContent = 'dbg';
-  d.onclick = function(){ d.style.maxHeight = d.style.maxHeight === '70vh' ? '22vh' : '70vh'; render(); };
-  (document.body || document.documentElement).appendChild(d);
-  log('UA ' + (navigator.userAgent || '').slice(0, 70));
-  log('url ' + String(location.href).replace(/^https?:\/\//, '').slice(0, 70));
+  el = document.createElement('div');
+  el.id = '__zdbg';
+  el.style.cssText = 'position:fixed;left:3px;bottom:3px;z-index:2147483646;max-width:88vw;' +
+    'padding:2px 5px;border-radius:5px;background:rgba(0,0,0,.5);color:#8fffab;' +
+    'font:8px/1.25 monospace;white-space:pre-wrap;overflow:hidden;max-height:2.6em;';
+  el.textContent = 'dbg';
+  el.onclick = function(){ el.style.maxHeight = el.style.maxHeight === '60vh' ? '2.6em' : '60vh'; render(); };
+  (document.body || document.documentElement).appendChild(el);
 } catch(e){} };
 if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', boot); } else { boot(); }
-window.addEventListener('error', function(e){
-  log('ERR ' + (e.message || '?').slice(0, 90) + ' @' + String(e.filename || '').split('/').pop() + ':' + e.lineno);
-});
+if (window.__zdbgLate) log('LATE-INJECT (no document-start)');
+log('UA ' + (navigator.userAgent || '').slice(0, 64));
+try { log('vis ' + (document.visibilityState || '?')); } catch(e){}
+window.addEventListener('error', function(e){ log('ERR ' + (e.message || '?').slice(0, 90)); });
 window.addEventListener('unhandledrejection', function(e){
   var r = e.reason || '';
-  log('REJ ' + (r.message || String(r)).slice(0, 110));
+  log('REJ ' + (r.message || String(r)).slice(0, 100));
 });
 ['WebChannelMessageToChrome', 'WebChannelMessageToContent'].forEach(function(name){
   window.addEventListener(name, function(e){ try {
     var d = e.detail; var m = (typeof d === 'string' ? JSON.parse(d) : d) || {};
-    var msg = m.message || {};
-    log((name === 'WebChannelMessageToChrome' ? 'WC> ' : 'WC< ') + (msg.command || '?') +
-      (name === 'WebChannelMessageToContent' ? ' ' + JSON.stringify(msg.data || '').slice(0, 50) : ''));
+    log((name === 'WebChannelMessageToChrome' ? 'WC> ' : 'WC< ') + ((m.message && m.message.command) || '?'));
   } catch(e2){ log(name + ' ?'); } });
 });
 try {
   var of = window.fetch;
   if (of) window.fetch = function(){ try {
     var input = arguments[0];
-    var url = (input && input.url) || input || '';
-    var meth = (arguments[1] && arguments[1].method) || (input && input.method) || 'GET';
-    var tag = 'F ' + meth + ' ' + String(url).replace(/^https?:\/\/[^\/]+/, '').slice(0, 72);
-    log(tag + ' ...');
+    var u = (input && input.url) || input || '';
+    var m2 = (arguments[1] && arguments[1].method) || 'GET';
+    var tag = 'F ' + m2 + ' ' + String(u).replace(/^https?:\/\/[^\/]+/, '').slice(0, 60);
+    log(tag);
     return of.apply(this, arguments).then(function(r){ log(tag + ' -> ' + r.status); return r; },
-      function(e2){ log(tag + ' !! ' + ((e2 && e2.message) || 'failed').slice(0, 60)); throw e2; });
+      function(e2){ log(tag + ' !! ' + ((e2 && e2.message) || 'fail').slice(0, 50)); throw e2; });
   } catch(e3){ return of.apply(this, arguments); } };
 } catch(e){}
 try {
   var oo = XMLHttpRequest.prototype.open, os = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open = function(m, u){ try {
-    this.__ztag = 'X ' + m + ' ' + String(u).replace(/^https?:\/\/[^\/]+/, '').slice(0, 72);
+    this.__ztag = 'X ' + m + ' ' + String(u).replace(/^https?:\/\/[^\/]+/, '').slice(0, 60);
   } catch(e){} return oo.apply(this, arguments); };
   XMLHttpRequest.prototype.send = function(){ try {
-    var t = this.__ztag || 'X'; log(t + ' ...');
-    this.addEventListener('loadend', function(){ log(t + ' -> ' + this.status); });
+    var tg = this.__ztag || 'X'; log(tg);
+    this.addEventListener('loadend', function(){ log(tg + ' -> ' + this.status); });
   } catch(e){} return os.apply(this, arguments); };
 } catch(e){}
 try {
   var ps = history.pushState;
   if (ps) history.pushState = function(){ try {
-    log('NAV ' + String(arguments[2] || '').slice(0, 72));
+    log('NAV ' + String(arguments[2] || '').slice(0, 60));
   } catch(e){} return ps.apply(this, arguments); };
 } catch(e){}
 try {
-  var wrapDeliver = function(){ try {
-    if (typeof window.__zeusDeliver === 'function' && !window.__zeusDeliver.__wrapped) {
-      var od = window.__zeusDeliver;
-      var nd = function(q){ try { log('DLV ' + String(q).split('?')[0]); } catch(e){} return od(q); };
-      nd.__wrapped = true;
-      window.__zeusDeliver = nd;
-    }
-  } catch(e){} };
-  wrapDeliver();
-  setInterval(wrapDeliver, 1000);
+  var fired = false;
+  var oraf = window.requestAnimationFrame;
+  if (oraf) window.requestAnimationFrame = function(cb){
+    var done = false;
+    var wcb = function(x){ if (!done) { done = true; if (!fired) { fired = true; log('rAF ok'); } return cb(x); } };
+    var id = oraf.call(window, wcb);
+    setTimeout(function(){ if (!done) { done = true; if (!fired) { fired = true; log('rAF STALLED'); } cb(performance.now()); } }, 400);
+    return id;
+  };
 } catch(e){}
 })();
 """
@@ -162,12 +155,12 @@ try {
         web.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
-            // Keep the WebView's own real-browser user agent. Fastly
-            // fingerprints the API password-login route and stalls exactly
-            // the client that claims Firefox in its headers while being a
-            // Chromium WebView underneath; the desktop build passes the same
-            // route with its real Chromium UA. The injected hook spoofs
-            // Firefox inside the page for the WebChannel handshake instead.
+            // The content server only boots its desktop WebChannel flow for a
+            // Firefox user agent — with the WebView's real Chromium UA the
+            // page never leaves its loading spinner (tested on device). Use
+            // the desktop Firefox UA the injected hook spoofs anyway, so the
+            // HTTP headers and the in-page JS agree.
+            userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0"
         }
         web.addJavascriptInterface(Bridge(), "zeusWebLogin")
         // The shared hook (WebChannel + in-page exchange) comes from the Go
@@ -178,26 +171,25 @@ try {
         val hook = runCatching {
             Core.call("WebLoginHook", "[" + org.json.JSONObject.quote(deliver) + ", \"\"]")
         }.getOrDefault("")
-        // The hook has to run BEFORE the page's own scripts: the content
-        // server only boots its desktop WebChannel flow for a Firefox user
-        // agent, so the hook's in-page spoof must land first — a late
-        // (onPageFinished) injection leaves the page spinning on its loading
-        // screen. Document-start injection also catches the WebChannel
-        // handshake from the very first message, like the desktop's
-        // repeated early injection. The WebView's HTTP user agent stays the
-        // real one: Fastly fingerprints the API password-login route and
-        // stalls a claimed-Firefox Chromium client (the desktop build passes
-        // that route with its real Chromium UA). WebViews without the
-        // document-start support fall back to the late injection.
-        val injectAtDocStart =
-            WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)
-        if (injectAtDocStart) {
+        // The hook must land BEFORE the page's own scripts so the WebChannel
+        // handshake is caught from the very first message (like the desktop's
+        // repeated early injection). Document-start injection is attempted
+        // unconditionally; WebViews without the support (or a failed call)
+        // fall back to the late onPageFinished injection, which the page
+        // tolerates: it settles the boot handshake after a short timeout and
+        // asks can_link_account only when the user submits the form.
+        var docStart = false
+        try {
             WebViewCompat.addDocumentStartJavaScript(web,
                 DEBUG_OVERLAY_JS + "\n" + hook, setOf("https://accounts.firefox.com"))
+            docStart = true
+        } catch (e: Throwable) {
+            // fall through to the late injection below
         }
         web.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) {
-                if (injectAtDocStart) return
+                if (docStart) return
+                view.evaluateJavascript("window.__zdbgLate = true;", null)
                 view.evaluateJavascript(DEBUG_OVERLAY_JS, null)
                 view.evaluateJavascript(hook, null)
             }

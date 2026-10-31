@@ -193,7 +193,7 @@ try {
             WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)
         if (injectAtDocStart) {
             WebViewCompat.addDocumentStartJavaScript(web,
-                arrayOf(DEBUG_OVERLAY_JS + "\n" + hook), setOf("https://accounts.firefox.com"))
+                DEBUG_OVERLAY_JS + "\n" + hook, setOf("https://accounts.firefox.com"))
         }
         web.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) {

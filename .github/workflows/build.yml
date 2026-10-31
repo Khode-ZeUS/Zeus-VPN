@@ -196,4 +196,4 @@ jobs:
         with:
           files: dist/*
           body_path: RELEASE_NOTES.md
-          draft: false
+          draft: true

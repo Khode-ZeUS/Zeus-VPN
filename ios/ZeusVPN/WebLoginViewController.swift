@@ -33,17 +33,23 @@ final class WebLoginViewController: UIViewController, WKScriptMessageHandler, WK
         hook = ZeuscoreCall("WebLoginHook",
             jsonArgs(["function(q) { window.webkit.messageHandlers.zeusWebLogin.postMessage(q); }",
                       ""]), &hookError)
+        // The hook has to run BEFORE the page's own scripts: the content
+        // server only boots its desktop WebChannel flow for a Firefox user
+        // agent, so the hook's in-page spoof must land first — a didFinish
+        // injection leaves the page spinning on its loading screen. The real
+        // Safari HTTP user agent stays: Fastly fingerprints the API
+        // password-login route, and the desktop build passes it with its real
+        // browser UA.
+        let documentStart = WKUserScript(source: hook,
+                                         injectionTime: .atDocumentStart,
+                                         forMainFrameOnly: true)
+        webView.configuration.userContentController.addUserScript(documentStart)
         webView.load(URLRequest(url: Self.pageURL))
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             title: "Close", style: .plain, target: self, action: #selector(closeTapped))
     }
 
     @objc private func closeTapped() { dismiss(animated: true) }
-
-    func webView(_ wv: WKWebView, didFinish navigation: WKNavigation!) {
-        wv.evaluateJavaScript("window.__zeusDeliver = function(q) { window.webkit.messageHandlers.zeusWebLogin.postMessage(q); };", completionHandler: nil)
-        wv.evaluateJavaScript(hook, completionHandler: nil)
-    }
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         // The shared hook delivers result queries ("tokens?...", "session?...",

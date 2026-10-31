@@ -6,7 +6,7 @@ import android.os.Bundle
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebView
-import android.webkit.WebViewClient
+import androidx.webkit.WebViewCompat
 import org.json.JSONObject
 
 /**
@@ -168,7 +168,6 @@ try {
             // Firefox inside the page for the WebChannel handshake instead.
         }
         web.addJavascriptInterface(Bridge(), "zeusWebLogin")
-        web.addJavascriptInterface(Bridge(), "zeusWebLogin")
         // The shared hook (WebChannel + in-page exchange) comes from the Go
         // engine so every platform runs the same logic; this side only
         // provides the delivery bridge. The nonce argument only matters to
@@ -177,16 +176,18 @@ try {
         val hook = runCatching {
             Core.call("WebLoginHook", "[" + org.json.JSONObject.quote(deliver) + ", \"\"]")
         }.getOrDefault("")
-        web.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView, url: String) {
-                // TEMPORARY diagnostics for the mobile sign-in freeze: a small
-                // on-page panel logging WebChannel traffic, network calls and
-                // JS errors. Remove once the sign-in flow is confirmed fixed.
-                view.evaluateJavascript(DEBUG_OVERLAY_JS, null)
-                view.evaluateJavascript("window.__zeusDeliver = " + org.json.JSONObject.quote(deliver) + ";", null)
-                view.evaluateJavascript(hook, null)
-            }
-        }
+        // The hook has to run BEFORE the page's own scripts: the content
+        // server only boots its desktop WebChannel flow for a Firefox user
+        // agent, so the hook's in-page spoof must land first — a late
+        // (onPageFinished) injection leaves the page spinning on its loading
+        // screen. Document-start injection also catches the WebChannel
+        // handshake from the very first message, like the desktop's
+        // repeated early injection. The WebView's HTTP user agent stays the
+        // real one: Fastly fingerprints the API password-login route and
+        // stalls a claimed-Firefox Chromium client (the desktop build passes
+        // that route with its real Chromium UA).
+        WebViewCompat.addDocumentStartJavaScript(web,
+            arrayOf(DEBUG_OVERLAY_JS + "\n" + hook), setOf("https://accounts.firefox.com"))
         web.webChromeClient = WebChromeClient()
         web.loadUrl(PAGE_URL)
     }

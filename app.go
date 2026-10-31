@@ -21,6 +21,7 @@ type App struct {
 	ctx         context.Context
 	autoConnect bool
 	minimized   bool
+	webLogin    *weblogin.Login
 }
 
 // NewApp must stay side-effect free: `wails build` runs the binary to
@@ -50,10 +51,20 @@ func (a *App) StartWebLogin(returnURL string) error {
 	if returnURL == "" {
 		returnURL = "http://wails.localhost/index.html"
 	}
+	// A previous flow may still own the webview page: stop it, and accept
+	// one in-flight delivery from its page (stale nonce).
+	prevNonce := ""
+	if a.webLogin != nil {
+		prevNonce = a.webLogin.Nonce()
+		a.webLogin.Stop()
+	}
 	wl, err := weblogin.Start()
 	if err != nil {
 		return err
 	}
+	wl.SetPreviousNonce(prevNonce)
+	wl.SetReturnURL(returnURL)
+	a.webLogin = wl
 	execJS := func(js string) {
 		if a.ctx != nil {
 			runtime.WindowExecJS(a.ctx, js)
@@ -124,6 +135,8 @@ func (a *App) StartWebLogin(returnURL string) error {
 			case <-ticker.C:
 				// (Re-)inject the hook on every page load.
 				execJS(hook)
+			case <-wl.StopChan():
+				return
 			}
 		}
 		if lastErr != nil {

@@ -98,6 +98,18 @@ try {
   } catch(e){} return ps.apply(this, arguments); };
 } catch(e){}
 try {
+  var db = crypto.subtle && crypto.subtle.deriveBits;
+  if (db) crypto.subtle.deriveBits = function(alg){ try {
+    var n = (alg && alg.name) || '?';
+    var it = (alg && alg.iterations) || '';
+    log('CRYPTO ' + n + (it ? ' x' + it : ''));
+    var r = db.apply(this, arguments);
+    r.then(function(){ log('CRYPTO ' + n + ' done'); }, function(e3){ log('CRYPTO ' + n + ' !! ' + ((e3 && e3.message) || '')); });
+    return r;
+  } catch(e4){ return db.apply(this, arguments); } };
+} catch(e){}
+document.addEventListener('submit', function(){ log('FORM submit'); }, true);
+try {
   var fired = false;
   var oraf = window.requestAnimationFrame;
   if (oraf) window.requestAnimationFrame = function(cb){
@@ -155,12 +167,14 @@ try {
         web.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
-            // The content server only boots its desktop WebChannel flow for a
-            // Firefox user agent — with the WebView's real Chromium UA the
-            // page never leaves its loading spinner (tested on device). Use
-            // the desktop Firefox UA the injected hook spoofs anyway, so the
-            // HTTP headers and the in-page JS agree.
-            userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0"
+            // Keep the WebView's REAL user agent on the wire — exactly like
+            // the working desktop build. The API edge block follows the
+            // client fingerprint: a forged Firefox UA on a Chromium TLS
+            // stack is stalled on the password-login route, while the real
+            // browser UA passes (panel data: account/status 200 with both,
+            // the login step only passes with the real UA). The page's boot
+            // check reads navigator.userAgent, which the document-start
+            // hook spoofs to Firefox before the page's scripts run.
         }
         web.addJavascriptInterface(Bridge(), "zeusWebLogin")
         // The shared hook (WebChannel + in-page exchange) comes from the Go

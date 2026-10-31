@@ -59,6 +59,11 @@ func (a *App) StartWebLogin(returnURL string) error {
 			runtime.WindowExecJS(a.ctx, js)
 		}
 	}
+	// The shared hook reports results through __zeusDeliver, which on the
+	// desktop navigates to the loopback receiver (CSP and Private Network
+	// Access do not block top-level navigations).
+	deliver := "function(q) { window.location.href = " + jsString(wl.ReceiverURL()+"/") + " + q; }"
+	hook := wl.HookJS(deliver)
 	go func() {
 		navStart := time.Now()
 		var lastErr error
@@ -96,9 +101,6 @@ func (a *App) StartWebLogin(returnURL string) error {
 				if err == nil {
 					reachable = true
 				}
-				if wl.HookSeen() > 0 {
-					reachable = true
-				}
 				if reachable {
 					if time.Since(navStart) > 4*time.Minute {
 						finished = true
@@ -120,7 +122,7 @@ func (a *App) StartWebLogin(returnURL string) error {
 				}
 			case <-ticker.C:
 				// (Re-)inject the hook on every page load.
-				execJS(wl.HookJS())
+				execJS(hook)
 			}
 		}
 		if lastErr != nil {

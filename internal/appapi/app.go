@@ -18,6 +18,7 @@ import (
 	"zeusvpn/internal/mozilla"
 	"zeusvpn/internal/store"
 	"zeusvpn/internal/usage"
+	"zeusvpn/internal/weblogin"
 )
 
 // Platform plugs the host operating system into the API. Nil functions mean
@@ -350,6 +351,13 @@ func (a *App) CompleteWebLoginTokens(email string, tokens store.Tokens) error {
 	a.emitState()
 	go a.RefreshQuotas()
 	return nil
+}
+
+// WebLoginHook returns the shared sign-in hook for the platform webview.
+// deliver is a JS expression that carries the hook's result query to the
+// engine (each platform provides its own bridge).
+func (a *App) WebLoginHook(deliver string) string {
+	return weblogin.HookJS(deliver)
 }
 
 // CompleteWebLoginToken stores the account from a web sign-in whose OAuth

@@ -29,6 +29,7 @@ class WebLoginActivity : Activity() {
         private val HOOK_JS = """
 (function() {
   if (window.__zeusHooked) return; window.__zeusHooked = true;
+  var exchangeFailed = false;
   var reply = function(messageId, command, data) {
     var envelope = {id: 'account_updates', message: {messageId: messageId, command: command, data: data}};
     [window, document].forEach(function(t) {
@@ -77,6 +78,7 @@ class WebLoginActivity : Activity() {
       })
       .catch(function(e) {
         // The in-page exchange failed: fall back to the engine's own exchange.
+        exchangeFailed = true;
         zeusWebLogin.onLogin(sessionToken, email, true);
       });
   };
@@ -137,20 +139,23 @@ class WebLoginActivity : Activity() {
         private var pending: String? = null
         private var pendingEmail = ""
 
+        private var exchangeFailed = false
+
         @JavascriptInterface
         fun onLogin(token: String, email: String, verified: Boolean) {
             if (!SESSION_TOKEN_HEX.matches(token.trim())) return
-            val complete = verified || pending != null
             pending = token.trim()
             if (email.isNotBlank()) pendingEmail = email
-            if (complete) finishLogin()
+            if (verified && !exchangeFailed) runExchange(token.trim(), pendingEmail)
         }
 
         @JavascriptInterface
         fun onVerified() {
-            // The page reached a verification/success screen: an unverified
-            // token held earlier is now usable.
-            if (pending != null) finishLogin()
+            // The page reached a verification/success screen: the session
+            // held earlier is verified — exchange it inside the page (the
+            // browser TLS passes networks that drop Go's).
+            val token = pending ?: return
+            if (!exchangeFailed) runExchange(token, pendingEmail) else finishLogin(token, pendingEmail)
         }
 
         @JavascriptInterface
@@ -169,16 +174,23 @@ class WebLoginActivity : Activity() {
             }
         }
 
-        private fun finishLogin() {
-            val token = pending ?: return
+        private fun finishLogin(token: String, email: String) {
+            // Fallback: the engine exchanges the session itself (fails on
+            // networks whose edge blocks non-browser clients).
             runOnUiThread {
                 try {
-                    Core.call("CompleteWebLogin", """[${JSONObject.quote(pendingEmail)}, ${JSONObject.quote(token)}]""")
+                    Core.call("CompleteWebLogin", """[${JSONObject.quote(email)}, ${JSONObject.quote(token)}]""")
                     setResult(RESULT_OK)
                 } catch (e: Exception) {
                     setResult(RESULT_CANCELED)
                 }
                 finish()
+            }
+        }
+
+        private fun runExchange(token: String, email: String) {
+            runOnUiThread {
+                web.evaluateJavascript("zeusExchange(${JSONObject.quote(token)}, ${JSONObject.quote(email)})", null)
             }
         }
     }

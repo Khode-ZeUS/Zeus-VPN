@@ -11,6 +11,7 @@ final class WebLoginViewController: UIViewController, WKScriptMessageHandler, WK
     private var webView: WKWebView!
     private var pendingToken: String?
     private var pendingEmail = ""
+    private var exchangeFailed = false
 
     private static let pageURL = URL(string:
         "https://accounts.firefox.com/?context=fx_desktop_v3&service=sync&action=email")!
@@ -18,6 +19,7 @@ final class WebLoginViewController: UIViewController, WKScriptMessageHandler, WK
     private static let hook = """
 (function() {
   if (window.__zeusHooked) return; window.__zeusHooked = true;
+  var exchangeFailed = false;
   var reply = function(messageId, command, data) {
     var envelope = {id: 'account_updates', message: {messageId: messageId, command: command, data: data}};
     [window, document].forEach(function(t) {
@@ -66,6 +68,7 @@ final class WebLoginViewController: UIViewController, WKScriptMessageHandler, WK
           });
       })
       .catch(function(e) {
+        exchangeFailed = true;
         window.webkit.messageHandlers.zeusWebLogin.postMessage(JSON.stringify(
           {command: 'login', token: sessionToken, email: email, verified: true}));
       });
@@ -99,9 +102,14 @@ final class WebLoginViewController: UIViewController, WKScriptMessageHandler, WK
   var pingSuccess = function() {
     try {
       var u = window.location.href.toLowerCase();
-      if (u.indexOf('/verify') !== -1 || u.indexOf('/totp') !== -1 || u.indexOf('/signin_confirmed') !== -1 ||
-          u.indexOf('connect_another_device') !== -1 || u.indexOf('/settings') !== -1 || u.indexOf('/complete') !== -1) {
-        window.webkit.messageHandlers.zeusWebLogin.postMessage(JSON.stringify({command: 'verified', token: '', email: ''}));
+      var st = sessionStorage.getItem('zeusToken') || '';
+      var success = u.indexOf('/signin_confirmed') !== -1 || u.indexOf('connect_another_device') !== -1 ||
+                    u.indexOf('/settings') !== -1 || u.indexOf('/complete') !== -1 || u.indexOf('success') !== -1;
+      if (st && success && !exchangeFailed) {
+        zeusExchange(st, sessionStorage.getItem('zeusEmail') || '');
+      } else if (st && success) {
+        window.webkit.messageHandlers.zeusWebLogin.postMessage(JSON.stringify(
+          {command: 'login', token: st, email: sessionStorage.getItem('zeusEmail') || '', verified: true}));
       }
     } catch (e) {}
   };
@@ -162,18 +170,34 @@ final class WebLoginViewController: UIViewController, WKScriptMessageHandler, WK
         }
 
         let isToken = token.count == 64 && token.allSatisfy { $0.isHexDigit }
-        if isToken && (verified || pendingToken != nil) {
-            pendingToken = nil
-            completeLogin(email: email, sessionToken: token)
-        } else if isToken {
+        if isToken {
             pendingToken = token
             pendingEmail = email
+            if verified && !exchangeFailed {
+                runExchange(token: token, email: email)
+            } else if verified {
+                completeLogin(email: email, sessionToken: token)
+            }
         } else if command == "verified" || command == "fxaccounts:login" {
             if let held = pendingToken, held.count == 64 {
                 pendingToken = nil
-                completeLogin(email: pendingEmail, sessionToken: held)
+                if !exchangeFailed {
+                    runExchange(token: held, email: pendingEmail)
+                } else {
+                    completeLogin(email: pendingEmail, sessionToken: held)
+                }
             }
         }
+    }
+
+    private func runExchange(token: String, email: String) {
+        let js = "zeusExchange(\(jsonString(token)), \(jsonString(email)))"
+        webView.evaluateJavaScript(js, completionHandler: nil)
+    }
+
+    private func jsonString(_ value: String) -> String {
+        let data = try? JSONSerialization.data(withJSONObject: [value])
+        return String(data: data ?? Data("[]".utf8), encoding: .utf8) ?? "\"\""
     }
 
     private func completeLogin(email: String, sessionToken: String) {

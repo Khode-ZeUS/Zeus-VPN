@@ -120,7 +120,10 @@ func (l *Login) token(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	email := q.Get("email")
 
-	if q.Get("kind") == "tokens" {
+	// The in-page exchange delivers the finished OAuth tokens as
+	// "tokens?access_token=..." — the token path only ever carries a raw
+	// session token.
+	if at := q.Get("access_token"); at != "" {
 		at := q.Get("access_token")
 		expires, _ := strconv.Atoi(q.Get("expires_in"))
 		if expires <= 0 {

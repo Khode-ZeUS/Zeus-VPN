@@ -334,6 +334,23 @@ func (a *App) CompleteWebLogin(email, sessionToken string) error {
 	return nil
 }
 
+// CompleteWebLoginTokens stores the account from a web sign-in whose OAuth
+// tokens were already exchanged inside the sign-in page.
+func (a *App) CompleteWebLoginTokens(email string, tokens store.Tokens) error {
+	if email == "" {
+		if p, perr := mozilla.FetchProfile(tokens.AccessToken); perr == nil {
+			email = p.Email
+		}
+	}
+	if err := a.eng.Auth.AddWebAccountTokens(email, tokens); err != nil {
+		return err
+	}
+	a.eng.Log("info", "signed in as "+email+" (web sign-in)")
+	a.emitState()
+	go a.RefreshQuotas()
+	return nil
+}
+
 // WebLoginFinished reports the outcome of a web sign-in to the UI. The
 // webview is already back on the app page by the time this runs.
 func (a *App) WebLoginFinished(email string, err error) {

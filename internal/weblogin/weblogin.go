@@ -15,18 +15,23 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"zeusvpn/internal/store"
 )
 
 const PageURL = "https://accounts.firefox.com/?context=fx_desktop_v3&service=sync&action=email"
 
 var sessionTokenHex = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
-// Result reports the session token (and email, when the page shared it), or
-// why the flow ended without one.
+// Result reports the outcome: the finished OAuth tokens (exchanged inside
+// the page, where the browser's TLS passes networks that drop Go's), or the
+// raw session token for the engine to exchange itself, or the failure.
 type Result struct {
+	Tokens       *store.Tokens
 	SessionToken string
 	Email        string
 	Err          error
@@ -112,6 +117,24 @@ func (l *Login) token(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if at := q.Get("access_token"); at != "" {
+		// The page exchanged the session for OAuth tokens itself (its TLS
+		// passes networks that drop Go's); store them without Go touching
+		// the network.
+		expires, _ := strconv.Atoi(q.Get("expires_in"))
+		if expires <= 0 {
+			expires = 86400
+		}
+		tokens := store.Tokens{AccessToken: at, RefreshToken: q.Get("refresh_token"),
+			Scope: "profile https://identity.mozilla.com/apps/vpn", ObtainedAt: time.Now(), ExpiresIn: int64(expires)}
+		l.mu.Lock()
+		l.pending, l.pendMail = "", ""
+		l.mu.Unlock()
+		l.deliver(Result{Tokens: &tokens, Email: q.Get("email")})
+		w.Header().Set("Location", PageURL)
+		w.WriteHeader(302)
+		return
+	}
 	if token == "" && ping != "" {
 		// A verification/success screen was reached: a held token is usable.
 		l.Verified()
@@ -180,6 +203,7 @@ func (l *Login) HookJS() string {
 	hook += webChannelReply
 	hook += webChannelForward
 	hook += successWatch
+	hook += inPageExchange
 	hook += cancelButton
 	hook += "})();"
 	return hook
@@ -214,15 +238,17 @@ const webChannelForward = `var forward = function(detail) {
     if (cmd === 'fxaccounts:login' || cmd === 'fxaccounts:oauth_login' || /verified/i.test(cmd)) {
       if (msg.messageId) reply(msg.messageId, cmd, {ok:true});
       if (!token) return;
+      var email = data.email || sessionStorage.getItem('zeusEmail') || '';
       if (verified) {
-        // Session confirmed: hand it over (navigating away from the page).
-        window.location.href = RECV + '/token?token=' + encodeURIComponent(token) +
-          '&email=' + encodeURIComponent(data.email || sessionStorage.getItem('zeusEmail') || '') + '&verified=1';
+        // Session confirmed: exchange it for OAuth tokens right here — the
+        // browser's TLS passes networks that drop Go's. Falls back to
+        // handing the raw session to the engine if the exchange fails.
+        zeusExchange(token, email);
       } else {
         // Session exists but is not verified yet: hold it page-side without
         // navigating — reloading here would interrupt the sign-in flow.
         try { sessionStorage.setItem('zeusToken', token);
-              sessionStorage.setItem('zeusEmail', data.email || ''); } catch (e) {}
+              sessionStorage.setItem('zeusEmail', email); } catch (e) {}
       }
       return;
     }
@@ -259,6 +285,54 @@ var nav = function() { try { pingSuccess(); } catch (e) {} };
 var ps = history.pushState; if (ps) history.pushState = function() { var r = ps.apply(this, arguments); nav(); return r; };
 var rs = history.replaceState; if (rs) history.replaceState = function() { var r = rs.apply(this, arguments); nav(); return r; };
 window.addEventListener('popstate', nav);
+`
+
+const inPageExchange = `var zeusExchange = function(sessionToken, email) {
+  var enc = new TextEncoder();
+  var b64 = function(buf) { var s = btoa(String.fromCharCode.apply(null, new Uint8Array(buf))); return s; };
+  var hex = function(b) { return Array.prototype.map.call(new Uint8Array(b), function(x) { return ('0' + x.toString(16)).slice(-2); }).join(''); };
+  return crypto.subtle.importKey('raw', new Uint8Array(sessionToken.match(/.{2}/g).map(function(h) { return parseInt(h, 16); })), 'HKDF', false, ['deriveBits'])
+    .then(function(base) {
+      return crypto.subtle.deriveBits({name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32),
+        info: enc.encode('identity.mozilla.com/picl/v1/sessionToken')}, base, 512);
+    })
+    .then(function(expanded) {
+      expanded = new Uint8Array(expanded);
+      var tokenID = hex(expanded.slice(0, 32));
+      var ts = String(Math.floor(Date.now() / 1000));
+      var nb = crypto.getRandomValues(new Uint8Array(6));
+      var nonce = b64(nb).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      var body = JSON.stringify({client_id: '5882386c6d801776', grant_type: 'fxa-credentials',
+        scope: 'profile https://identity.mozilla.com/apps/vpn', access_type: 'offline'});
+      return crypto.subtle.digest('SHA-256', enc.encode('hawk.1.payload\napplication/json\n' + body + '\n'))
+        .then(function(ph) {
+          var payloadHash = b64(ph);
+          var normalized = ['hawk.1.header', ts, nonce, 'POST', '/v1/oauth/token',
+            'api.accounts.firefox.com', '443', payloadHash, '', ''].join('\n');
+          return crypto.subtle.importKey('raw', expanded.slice(32), {name: 'HMAC', hash: 'SHA-256'}, false, ['sign'])
+            .then(function(hk) { return crypto.subtle.sign('HMAC', hk, enc.encode(normalized)); })
+            .then(function(mac) {
+              var header = 'Hawk id="' + tokenID + '", ts="' + ts + '", nonce="' + nonce +
+                '", mac="' + mac + '", hash="' + payloadHash + '"';
+              return fetch('https://api.accounts.firefox.com/v1/oauth/token', {method: 'POST',
+                headers: {'Content-Type': 'application/json', 'Authorization': header}, body: body});
+            });
+        })
+        .then(function(res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.json();
+        })
+        .then(function(out) {
+          window.location.href = RECV + '/token?access_token=' + encodeURIComponent(out.access_token || '') +
+            '&refresh_token=' + encodeURIComponent(out.refresh_token || '') +
+            '&expires_in=' + (out.expires_in || 86400) + '&email=' + encodeURIComponent(email) + '&exchange=1';
+        });
+    })
+    .catch(function(e) {
+      window.location.href = RECV + '/token?token=' + encodeURIComponent(sessionToken) +
+        '&email=' + encodeURIComponent(email) + '&verified=1';
+    });
+};
 `
 
 const cancelButton = `if (!document.getElementById('zeus-cancel')) {

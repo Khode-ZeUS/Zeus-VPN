@@ -76,10 +76,13 @@ func (a *App) StartWebLogin(returnURL string) error {
 			case res := <-wl.Result():
 				finished = true
 				var lerr error
-				if res.Err == nil {
-					lerr = a.App.CompleteWebLogin(res.Email, res.SessionToken)
-				} else {
+				switch {
+				case res.Err != nil:
 					lerr = res.Err
+				case res.Tokens != nil:
+					lerr = a.App.CompleteWebLoginTokens(res.Email, *res.Tokens)
+				default:
+					lerr = a.App.CompleteWebLogin(res.Email, res.SessionToken)
 				}
 				lastErr = lerr
 			case <-probe.C:

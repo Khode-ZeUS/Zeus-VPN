@@ -164,6 +164,30 @@ func (a *Auth) AddWebAccount(email string, t *mozilla.TokenResponse) error {
 	return nil
 }
 
+// AddWebAccountTokens stores an account whose OAuth tokens were already
+// exchanged (inside the web sign-in page), so no network call is needed.
+func (a *Auth) AddWebAccountTokens(email string, tokens store.Tokens) error {
+	email = cleanEmail(email)
+	if email == "" {
+		return errors.New("the sign-in page did not reveal the account's email")
+	}
+	if tokens.AccessToken == "" {
+		return errors.New("the sign-in page did not return an access token")
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	acc := a.accs.Find(email)
+	if acc == nil {
+		a.accs.List = append(a.accs.List, store.Account{Email: email})
+		acc = a.accs.Find(email)
+	}
+	acc.Tokens = tokens
+	acc.NeedsLogin = false
+	a.accs.Active = email
+	a.saveLocked()
+	return nil
+}
+
 // AccessToken returns a valid OAuth access token for the account ("" =
 // active one), refreshing it when expired or when force is set.
 func (a *Auth) AccessToken(email string, force bool) (string, error) {

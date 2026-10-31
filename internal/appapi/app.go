@@ -316,6 +316,7 @@ func (a *App) GetSnapshot() Snapshot {
 func (a *App) CompleteWebLogin(email, sessionToken string) error {
 	tok, err := mozilla.CompleteWebLogin(sessionToken)
 	if err != nil {
+		a.emit("notice", "Web sign-in failed: "+err.Error())
 		return err
 	}
 	if email == "" {
@@ -324,6 +325,7 @@ func (a *App) CompleteWebLogin(email, sessionToken string) error {
 		}
 	}
 	if err := a.eng.Auth.AddWebAccount(email, tok); err != nil {
+		a.emit("notice", "Web sign-in failed: "+err.Error())
 		return err
 	}
 	a.eng.Log("info", "signed in as "+email+" (web sign-in)")

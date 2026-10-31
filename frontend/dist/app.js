@@ -188,6 +188,11 @@ function render() {
   if (!snap) return;
   applyPlatform();
   renderAccounts();
+  if (snap.loggedIn && addingAccount) {
+    // The web sign-in finished successfully — return to the app instead of
+    // staying on the login view.
+    addingAccount = false;
+  }
   if (!snap.loggedIn || addingAccount) {
     $("#login-cancel").hidden = !snap.loggedIn;
     $("#login-subtitle").textContent = snap.loggedIn ? "Add another Mozilla account" : "Sign in with your Mozilla account";

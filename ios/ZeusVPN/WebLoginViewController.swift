@@ -38,14 +38,14 @@ final class WebLoginViewController: UIViewController, WKScriptMessageHandler, WK
         var tokenID = Array.prototype.map.call(expanded.slice(0, 32), function(x) { return ('0' + x.toString(16)).slice(-2); }).join('');
         var ts = String(Math.floor(Date.now() / 1000));
         var nb = crypto.getRandomValues(new Uint8Array(6));
-        var nonce = b64(nb).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        var nonce = b64(nb).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');
         var body = JSON.stringify({client_id: '5882386c6d801776', grant_type: 'fxa-credentials',
           scope: 'profile https://identity.mozilla.com/apps/vpn', access_type: 'offline'});
-        return crypto.subtle.digest('SHA-256', enc.encode('hawk.1.payload\napplication/json\n' + body + '\n'))
+        return crypto.subtle.digest('SHA-256', enc.encode('hawk.1.payload\\napplication/json\\n' + body + '\\n'))
           .then(function(ph) {
             var payloadHash = b64(ph);
             var normalized = ['hawk.1.header', ts, nonce, 'POST', '/v1/oauth/token',
-              'api.accounts.firefox.com', '443', payloadHash, '', ''].join('\n');
+              'api.accounts.firefox.com', '443', payloadHash, '', ''].join('\\n');
             return crypto.subtle.importKey('raw', expanded.slice(32), {name: 'HMAC', hash: 'SHA-256'}, false, ['sign'])
               .then(function(hk) { return crypto.subtle.sign('HMAC', hk, enc.encode(normalized)); })
               .then(function(mac) {

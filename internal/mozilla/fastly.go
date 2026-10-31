@@ -25,7 +25,7 @@ const (
 	fxaAPIHost          = "https://api.accounts.firefox.com"
 	fxaSiteHost         = "https://accounts.firefox.com"
 	fastlySolverUA      = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
-	maxPostBackRounds   = 3
+	maxPostBackRounds   = 8
 	powAlphabet         = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	fastlySolverTimeout = 60 * time.Second
 )

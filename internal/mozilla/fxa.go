@@ -28,6 +28,12 @@ const (
 	protocolVersion      = "identity.mozilla.com/picl/v1/"
 	maxChallengeAttempts = 5
 
+	// firefoxAPIUA is the User-Agent of desktop Firefox, which Firefox's
+	// built-in VPN sends with every Firefox Accounts request. The edge
+	// block follows the client fingerprint: the old MozillaVPN UA is
+	// refused, the browser-grade one passes.
+	firefoxAPIUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0"
+
 	ErrnoAccountUnknown    = 102
 	ErrnoIncorrectPassword = 103
 	ErrnoInvalidParameter  = 107
@@ -121,8 +127,9 @@ func hawkHeader(method string, u *url.URL, sessionTokenHex string, body []byte) 
 	return header, nil
 }
 
-// fxaDo sends an FxA request, solving Fastly's challenge on HTTP 406. The
-// Hawk header is rebuilt on every attempt so its timestamp stays fresh.
+// fxaDo sends an FxA request as desktop Firefox would, solving Fastly's
+// challenge on HTTP 406. The Hawk header is rebuilt on every attempt so its
+// timestamp stays fresh.
 func fxaDo(method, path, sessionToken string, payload any) (map[string]any, error) {
 	c := Client()
 	u := mustURL(fxaAuthServer + path)
@@ -135,7 +142,8 @@ func fxaDo(method, path, sessionToken string, payload any) (map[string]any, erro
 	for attempt := 0; attempt < maxChallengeAttempts; attempt++ {
 		req, _ := http.NewRequest(method, u.String(), bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
-		applyHeaders(req.Header)
+		req.Header.Set("User-Agent", firefoxAPIUA)
+		req.Header.Set("Accept", "application/json")
 		if sessionToken != "" {
 			h, err := hawkHeader(method, u, sessionToken, body)
 			if err != nil {
@@ -153,12 +161,15 @@ func fxaDo(method, path, sessionToken string, payload any) (map[string]any, erro
 		if resp.StatusCode != 406 {
 			break
 		}
-		if !strings.Contains(string(respBody), "_fs-ch-") {
-			// A bare 406 is a hard edge block with no challenge to solve —
-			// the network path itself is refused; solving cannot help.
-			break
-		}
+		// Solve on every 406, bare or not: the API host usually serves no
+		// challenge page at all — the needed cookie (Domain=firefox.com) is
+		// earned from the site host, and the solver handles both.
 		if err := solveFastlyChallenge(c); err != nil {
+			if errors.Is(err, errNoChallenge) && !strings.Contains(string(respBody), "_fs-ch-") {
+				// Neither host served a challenge and the block came bare:
+				// the network path itself is refused; solving cannot help.
+				break
+			}
 			return nil, fmt.Errorf("Mozilla anti-bot check failed: %w", err)
 		}
 	}

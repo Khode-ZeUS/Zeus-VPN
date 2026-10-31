@@ -118,8 +118,9 @@ const inPageExchange = `var zeusExchange = function(sessionToken, email) {
           return crypto.subtle.importKey('raw', expanded.slice(32), {name: 'HMAC', hash: 'SHA-256'}, false, ['sign'])
             .then(function(hk) { return crypto.subtle.sign('HMAC', hk, enc.encode(normalized)); })
             .then(function(mac) {
+              var macB64 = b64(mac); // subtle.sign yields an ArrayBuffer
               var header = 'Hawk id="' + tokenID + '", ts="' + ts + '", nonce="' + nonce +
-                '", mac="' + mac + '", hash="' + payloadHash + '"';
+                '", mac="' + macB64 + '", hash="' + payloadHash + '"';
               return fetch('https://api.accounts.firefox.com/v1/oauth/token', {method: 'POST',
                 headers: {'Content-Type': 'application/json', 'Authorization': header}, body: body});
             });

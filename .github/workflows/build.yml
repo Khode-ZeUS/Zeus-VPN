@@ -90,6 +90,28 @@ jobs:
             build/bin/*.deb
             build/bin/*.tar.gz
 
+  linux-gtk40:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.0-dev
+          go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
+      - name: Build (WebKitGTK 4.0 — CentOS/RHEL 9 and older distros)
+        run: |
+          wails build -platform linux/amd64 -tags "with_gvisor" -trimpath -ldflags "-s -w"
+          tar -C build/bin -czf build/bin/ZeusVPN-linux-amd64-gtk40.tar.gz ZeusVPN
+      - uses: actions/upload-artifact@v4
+        with:
+          if-no-files-found: error
+          name: linux-gtk40
+          path: build/bin/ZeusVPN-linux-amd64-gtk40.tar.gz
+
   android:
     runs-on: ubuntu-24.04
     steps:
@@ -177,7 +199,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, macos, linux, android, ios]
+    needs: [windows, macos, linux, linux-gtk40, android, ios]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

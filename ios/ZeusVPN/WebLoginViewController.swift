@@ -74,6 +74,7 @@ final class WebLoginViewController: UIViewController, WKScriptMessageHandler, WK
             }
         }
     }
+}
 
 private func jsonArgs(_ items: [String]) -> String {
     let data = try? JSONSerialization.data(withJSONObject: items)

@@ -356,8 +356,8 @@ func (a *App) CompleteWebLoginTokens(email string, tokens store.Tokens) error {
 // WebLoginHook returns the shared sign-in hook for the platform webview.
 // deliver is a JS expression that carries the hook's result query to the
 // engine (each platform provides its own bridge).
-func (a *App) WebLoginHook(deliver, nonce string) string {
-	return weblogin.HookJS(deliver, nonce)
+func (a *App) WebLoginHook(deliver, deliverBase, nonce string) string {
+	return weblogin.HookJS(deliver, deliverBase, nonce)
 }
 
 // CompleteWebLoginToken stores the account from a web sign-in whose OAuth

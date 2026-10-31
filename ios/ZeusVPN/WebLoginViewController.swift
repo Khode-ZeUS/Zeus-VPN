@@ -30,7 +30,8 @@ final class WebLoginViewController: UIViewController, WKScriptMessageHandler, WK
         // provides the delivery bridge.
         var hookError: NSError?
         hook = ZeuscoreCall("WebLoginHook",
-            jsonArgs(["function(q) { window.webkit.messageHandlers.zeusWebLogin.postMessage(q); }"]), &hookError)
+            jsonArgs(["function(q) { window.webkit.messageHandlers.zeusWebLogin.postMessage(q); }",
+                      "", ""]), &hookError)
         webView.load(URLRequest(url: Self.pageURL))
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             title: "Close", style: .plain, target: self, action: #selector(closeTapped))

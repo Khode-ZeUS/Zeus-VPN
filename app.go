@@ -62,8 +62,9 @@ func (a *App) StartWebLogin(returnURL string) error {
 	// The shared hook reports results through __zeusDeliver, which on the
 	// desktop navigates to the loopback receiver (CSP and Private Network
 	// Access do not block top-level navigations).
-	deliver := "function(q) { window.location.href = " + jsString(wl.ReceiverURL()+"/") + " + q; }"
-	hook := wl.HookJS(deliver)
+	deliver := "function(q) { window.location.href = " + jsString(wl.ReceiverURL()+"/") +
+		" + q + (q.indexOf('?') !== -1 ? '&' : '?') + 'nonce=' + NONCE; }"
+	hook := wl.HookJS(deliver, wl.ReceiverURL()+"/", wl.Nonce())
 	go func() {
 		navStart := time.Now()
 		var lastErr error

@@ -81,8 +81,10 @@ class WebLoginActivity : Activity() {
         // engine so every platform runs the same logic; this side only
         // provides the delivery bridge.
         val deliver = "function(q) { zeusWebLogin.deliver(q); }"
+        val receiverBase = "http://" + (intent?.getStringExtra("receiver") ?: "")
         val hook = runCatching {
-            Core.call("WebLoginHook", "[" + org.json.JSONObject.quote(deliver) + "]")
+            Core.call("WebLoginHook",
+                "[" + org.json.JSONObject.quote(deliver) + ", " + org.json.JSONObject.quote(receiverBase) + ", " + org.json.JSONObject.quote(intent?.getStringExtra("nonce") ?: "") + "]")
         }.getOrDefault("")
         web.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) {

@@ -13,7 +13,6 @@ package weblogin
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -46,8 +45,10 @@ type Login struct {
 	receiver string
 	nonce    string
 	result   chan Result
-	mu       sync.Mutex
-	stopped  bool
+	// Logger, when set, receives diagnostic lines (e.g. the page trail).
+	Logger  func(string)
+	mu      sync.Mutex
+	stopped bool
 }
 
 // Start opens the loopback receiver.
@@ -66,6 +67,7 @@ func Start() (*Login, error) {
 	mux.HandleFunc("/tokens", l.guard(l.token))
 	mux.HandleFunc("/session", l.guard(l.session))
 	mux.HandleFunc("/cancel", l.guard(l.cancel))
+	mux.HandleFunc("/nav", l.guard(l.nav))
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5}
 	go srv.Serve(ln)
 	return l, nil
@@ -158,7 +160,15 @@ func (l *Login) session(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200)
 }
 
-// cancel handles the user pressing the injected cancel button.
+// nav records a page-load trail entry (diagnostics for the sign-in flow).
+func (l *Login) nav(w http.ResponseWriter, r *http.Request) {
+	if l.Logger != nil {
+		l.Logger("web sign-in page: " + r.URL.Query().Get("href"))
+	}
+	w.WriteHeader(200)
+}
+
+// cancel handles the user pressing the injected cancel button.// cancel handles the user pressing the injected cancel button.
 func (l *Login) cancel(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200)
 	l.deliver(Result{Err: errors.New("canceled")})
@@ -167,15 +177,15 @@ func (l *Login) cancel(w http.ResponseWriter, r *http.Request) {
 // Result delivers the outcome of the flow.
 func (l *Login) Result() <-chan Result { return l.result }
 
+// Nonce returns this login's one-time receiver nonce.
+func (l *Login) Nonce() string { return l.nonce }
+
 // HookJS returns the shared in-page sign-in hook with the given delivery
-// expression (see hook.go).
-func (l *Login) HookJS(deliver string) string { return HookJS(deliver, l.nonce) }
+// expression, receiver base and nonce (see hook.go).
+func (l *Login) HookJS(deliver, deliverBase, nonce string) string {
+	return HookJS(deliver, deliverBase, nonce)
+}
 
 // ReceiverURL is the base URL of the loopback receiver (for platform// ReceiverURL is the base URL of the loopback receiver (for platform
 // delivery adapters that navigate to it).
 func (l *Login) ReceiverURL() string { return l.receiver }
-
-func jsString(s string) string {
-	b, _ := json.Marshal(s)
-	return string(b)
-}

@@ -26,6 +26,12 @@
     </div>
     <div class="form">
       <div class="form-error" id="login-error"></div>
+      <div id="login-direct" hidden>
+        <input type="email" id="login-email" placeholder="Email" autocomplete="email" inputmode="email">
+        <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
+        <input type="text" id="login-code" placeholder="Verification code" hidden>
+        <button class="btn primary" type="button" id="login-direct-go"><span>Sign in</span></button>
+      </div>
       <button class="btn primary" type="button" id="login-web"><span>Sign in with Firefox</span></button>
       <button class="btn ghost" type="button" id="login-cancel" hidden>Cancel</button>
       <p class="muted small center" id="login-hint">The Mozilla sign-in page opens inside this window. On some networks it needs a VPN connection — connect first, then retry.</p>

@@ -397,6 +397,40 @@ func (a *App) WebLoginFinished(email string, err error) {
 	a.emitState()
 }
 
+// Direct sign-in with email and password: the engine talks to Firefox
+// Accounts itself and answers Mozilla's edge challenge when it appears. The
+// desktop UI keeps using the web sign-in; these steps power the mobile
+// forms. Each call returns one step of the possibly multi-step flow (an
+// unblock code, an emailed code, or an email confirmation link).
+func (a *App) Login(email, password string) (*core.LoginStep, error) {
+	step, err := a.eng.Auth.Login(email, password)
+	a.emitState()
+	return step, err
+}
+
+func (a *App) VerifyCode(code string) (*core.LoginStep, error) {
+	step, err := a.eng.Auth.VerifyCode(code)
+	a.emitState()
+	return step, err
+}
+
+func (a *App) ConfirmLink() (*core.LoginStep, error) {
+	step, err := a.eng.Auth.ConfirmLink()
+	a.emitState()
+	return step, err
+}
+
+func (a *App) SubmitUnblock(code string) (*core.LoginStep, error) {
+	step, err := a.eng.Auth.SubmitUnblock(code)
+	a.emitState()
+	return step, err
+}
+
+func (a *App) CancelLogin() {
+	a.eng.Auth.CancelLogin()
+	a.emitState()
+}
+
 func active(st string) bool {
 	return st == core.StatusConnected || st == core.StatusReconnecting
 }

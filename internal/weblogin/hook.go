@@ -1,11 +1,6 @@
 package weblogin
 
-import (
-	"encoding/json"
-	"regexp"
-)
-
-var sessionTokenHex = regexp.MustCompile(`^[0-9a-f]{64}$`)
+import "regexp"
 
 // HookJS returns the shared sign-in hook injected into the Firefox Accounts
 // page on every platform (desktop webview, Android WebView, iOS WKWebView).
@@ -20,32 +15,31 @@ var sessionTokenHex = regexp.MustCompile(`^[0-9a-f]{64}$`)
 //
 //	function(q) { window.webkit.messageHandlers.zeusWebLogin.postMessage(q); }
 //
-// deliverBase is the loopback receiver base URL used for the one-shot page
-// trail ("" on platforms without a receiver). The host must also define
-// window.__zeusDeliver with the same semantics before navigating to PageURL,
+// The host must also define window.__zeusDeliver with the same semantics
+// before navigating to PageURL (the hook uses it for internal handovers),
 // and re-run this script on every page load (it is idempotent).
-func HookJS(deliver, deliverBase, nonce string) string {
+func HookJS(deliver, nonce string) string {
 	hook := "(function(){\n"
 	hook += "if (window.__zeusHooked) return; window.__zeusHooked = true;\n"
 	hook += "var exchangeFailed = false;\n"
 	hook += "var NONCE = " + jsString(nonce) + ";\n"
-	hook += "var __deliver = " + jsString(deliver) + ";\n"
-	hook += "var __deliverBase = " + jsString(deliverBase) + ";\n"
+	hook += "var __deliver = " + deliver + ";\n"
 	hook += uaSpoof
 	hook += webChannelReply
 	hook += webChannelForward
 	hook += inPageExchange
 	hook += successWatch
-	hook += navTrail
 	hook += cancelButton
 	hook += "})();"
 	return hook
 }
 
-// InjectJS returns the script the host runs on every page load: the delivery
-// shim followed by the shared hook (both idempotent).
-func InjectJS(deliver, deliverBase, nonce string) string {
-	return "window.__zeusDeliver = function(q) { __deliver(q); };\n" + HookJS(deliver, deliverBase, nonce)
+const DeliverShim = `window.__zeusDeliver = function(q) { __deliver(q); };`
+
+// InjectJS returns the script the host runs on every page load: the
+// delivery shim followed by the shared hook (both idempotent).
+func InjectJS(deliver, nonce string) string {
+	return DeliverShim + "\n" + HookJS(deliver, nonce)
 }
 
 // Result query kinds delivered to the host.
@@ -183,15 +177,6 @@ var rs = history.replaceState; if (rs) history.replaceState = function() { var r
 window.addEventListener('popstate', nav);
 `
 
-const navTrail = `try {
-  if (location.hostname.indexOf('firefox.com') !== -1 && __deliverBase && !sessionStorage.getItem('zeusNav')) {
-    sessionStorage.setItem('zeusNav', '1');
-    var i = new Image();
-    i.src = __deliverBase + 'nav?href=' + encodeURIComponent(location.href) + '&nonce=' + NONCE;
-  }
-} catch (e) {}
-`
-
 const cancelButton = `if (!document.getElementById('zeus-cancel')) {
   var b = document.createElement('button');
   b.id = 'zeus-cancel';
@@ -203,7 +188,5 @@ const cancelButton = `if (!document.getElementById('zeus-cancel')) {
 }
 `
 
-func jsString(s string) string {
-	b, _ := json.Marshal(s)
-	return string(b)
-}
+// sessionTokenHex validates handed-over session tokens.
+var sessionTokenHex = regexp.MustCompile(`^[0-9a-f]{64}$`)

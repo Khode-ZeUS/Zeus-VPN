@@ -13,6 +13,7 @@ package weblogin
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -37,22 +38,16 @@ type Result struct {
 }
 
 // Login is one web sign-in flow: a loopback receiver plus the pieces the
-// platform webview needs (page URL, hook script). The receiver accepts
-// deliveries carrying this login's nonce (or the previous login's — a
-// restarted flow may have an in-flight page), and its responses are
+// platform webview needs (page URL, hook script). The receiver only accepts
+// deliveries carrying the login's one-time nonce, and its responses are
 // no-store (tokens must never land in a cache).
 type Login struct {
-	ln        net.Listener
-	receiver  string
-	nonce     string
-	prevNonce string
-	returnURL string
-	result    chan Result
-	// Logger, when set, receives diagnostic lines (e.g. the page trail).
-	Logger  func(string)
-	stop    chan struct{}
-	mu      sync.Mutex
-	stopped bool
+	ln       net.Listener
+	receiver string
+	nonce    string
+	result   chan Result
+	mu       sync.Mutex
+	stopped  bool
 }
 
 // Start opens the loopback receiver.
@@ -66,51 +61,34 @@ func Start() (*Login, error) {
 		return nil, fmt.Errorf("could not generate the sign-in nonce: %w", err)
 	}
 	l := &Login{ln: ln, receiver: "http://" + ln.Addr().String(),
-		nonce: hex.EncodeToString(nb), result: make(chan Result, 4), stop: make(chan struct{})}
+		nonce: hex.EncodeToString(nb), result: make(chan Result, 4)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/tokens", l.guard(l.token))
 	mux.HandleFunc("/session", l.guard(l.session))
 	mux.HandleFunc("/cancel", l.guard(l.cancel))
-	mux.HandleFunc("/nav", l.guard(l.nav))
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5}
 	go srv.Serve(ln)
 	return l, nil
 }
 
-// guard accepts deliveries carrying this login's nonce (or the previous
-// login's — a restarted flow may have an in-flight page), marks every
-// response uncacheable, and soft-redirects unknown deliveries back to the
-// app instead of stranding the webview on an error page.
+// guard rejects deliveries without this login's nonce and marks every
+// response uncacheable.
 func (l *Login) guard(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("nonce") != l.nonce {
+			w.Header().Set("Cache-Control", "no-store")
+			w.WriteHeader(403)
+			return
+		}
 		w.Header().Set("Cache-Control", "no-store")
-		if n := r.URL.Query().Get("nonce"); n == l.nonce || n == l.prevNonce {
-			next(w, r)
-			return
-		}
-		if l.returnURL != "" {
-			w.Header().Set("Location", l.returnURL)
-			w.WriteHeader(302)
-			return
-		}
-		w.WriteHeader(403)
+		next(w, r)
 	}
 }
 
-// SetPreviousNonce lets a restarted flow accept deliveries from the page
-// of the previous attempt.
-func (l *Login) SetPreviousNonce(n string) { l.prevNonce = n }
-
-// SetReturnURL is where the webview is sent for unmatched deliveries.
-func (l *Login) SetReturnURL(u string) { l.returnURL = u }
-
-// Stop closes the receiver and signals the flow's goroutines.
+// Stop closes the receiver; the flow is over either way.
 func (l *Login) Stop() {
 	l.mu.Lock()
-	if !l.stopped {
-		l.stopped = true
-		close(l.stop)
-	}
+	l.stopped = true
 	l.mu.Unlock()
 	l.ln.Close()
 }
@@ -180,15 +158,7 @@ func (l *Login) session(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200)
 }
 
-// nav records a page-load trail entry (diagnostics for the sign-in flow).
-func (l *Login) nav(w http.ResponseWriter, r *http.Request) {
-	if l.Logger != nil {
-		l.Logger("web sign-in page: " + r.URL.Query().Get("href"))
-	}
-	w.WriteHeader(200)
-}
-
-// cancel handles the user pressing the injected cancel button.// cancel handles the user pressing the injected cancel button.
+// cancel handles the user pressing the injected cancel button.
 func (l *Login) cancel(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200)
 	l.deliver(Result{Err: errors.New("canceled")})
@@ -197,18 +167,15 @@ func (l *Login) cancel(w http.ResponseWriter, r *http.Request) {
 // Result delivers the outcome of the flow.
 func (l *Login) Result() <-chan Result { return l.result }
 
-// Nonce returns this login's one-time receiver nonce.
-func (l *Login) Nonce() string { return l.nonce }
-
-// StopChan signals the flow's goroutines to wind down.
-func (l *Login) StopChan() <-chan struct{} { return l.stop }
-
 // HookJS returns the shared in-page sign-in hook with the given delivery
-// expression, receiver base and nonce (see hook.go).
-func (l *Login) HookJS(deliver, deliverBase, nonce string) string {
-	return HookJS(deliver, deliverBase, nonce)
-}
+// expression (see hook.go).
+func (l *Login) HookJS(deliver string) string { return HookJS(deliver, l.nonce) }
 
 // ReceiverURL is the base URL of the loopback receiver (for platform// ReceiverURL is the base URL of the loopback receiver (for platform
 // delivery adapters that navigate to it).
 func (l *Login) ReceiverURL() string { return l.receiver }
+
+func jsString(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}

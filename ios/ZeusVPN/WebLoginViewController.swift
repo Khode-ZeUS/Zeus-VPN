@@ -27,11 +27,12 @@ final class WebLoginViewController: UIViewController, WKScriptMessageHandler, WK
         webView.navigationDelegate = self
         // The shared hook (WebChannel + in-page exchange) comes from the Go
         // engine so every platform runs the same logic; this side only
-        // provides the delivery bridge.
+        // provides the delivery bridge. The nonce argument only matters to
+        // the desktop loopback delivery, so it is empty here.
         var hookError: NSError?
         hook = ZeuscoreCall("WebLoginHook",
             jsonArgs(["function(q) { window.webkit.messageHandlers.zeusWebLogin.postMessage(q); }",
-                      "", ""]), &hookError)
+                      ""]), &hookError)
         webView.load(URLRequest(url: Self.pageURL))
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             title: "Close", style: .plain, target: self, action: #selector(closeTapped))

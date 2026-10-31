@@ -79,12 +79,11 @@ class WebLoginActivity : Activity() {
         web.addJavascriptInterface(Bridge(), "zeusWebLogin")
         // The shared hook (WebChannel + in-page exchange) comes from the Go
         // engine so every platform runs the same logic; this side only
-        // provides the delivery bridge.
+        // provides the delivery bridge. The nonce argument only matters to
+        // the desktop loopback delivery, so it is empty here.
         val deliver = "function(q) { zeusWebLogin.deliver(q); }"
-        val receiverBase = "http://" + (intent?.getStringExtra("receiver") ?: "")
         val hook = runCatching {
-            Core.call("WebLoginHook",
-                "[" + org.json.JSONObject.quote(deliver) + ", " + org.json.JSONObject.quote(receiverBase) + ", " + org.json.JSONObject.quote(intent?.getStringExtra("nonce") ?: "") + "]")
+            Core.call("WebLoginHook", "[" + org.json.JSONObject.quote(deliver) + ", \"\"]")
         }.getOrDefault("")
         web.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) {

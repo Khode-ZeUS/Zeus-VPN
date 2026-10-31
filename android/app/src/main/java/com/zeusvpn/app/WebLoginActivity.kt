@@ -6,7 +6,9 @@ import android.os.Bundle
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import org.json.JSONObject
 
 /**
@@ -185,9 +187,21 @@ try {
         // repeated early injection. The WebView's HTTP user agent stays the
         // real one: Fastly fingerprints the API password-login route and
         // stalls a claimed-Firefox Chromium client (the desktop build passes
-        // that route with its real Chromium UA).
-        WebViewCompat.addDocumentStartJavaScript(web,
-            arrayOf(DEBUG_OVERLAY_JS + "\n" + hook), setOf("https://accounts.firefox.com"))
+        // that route with its real Chromium UA). WebViews without the
+        // document-start support fall back to the late injection.
+        val injectAtDocStart =
+            WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)
+        if (injectAtDocStart) {
+            WebViewCompat.addDocumentStartJavaScript(web,
+                arrayOf(DEBUG_OVERLAY_JS + "\n" + hook), setOf("https://accounts.firefox.com"))
+        }
+        web.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView, url: String) {
+                if (injectAtDocStart) return
+                view.evaluateJavascript(DEBUG_OVERLAY_JS, null)
+                view.evaluateJavascript(hook, null)
+            }
+        }
         web.webChromeClient = WebChromeClient()
         web.loadUrl(PAGE_URL)
     }

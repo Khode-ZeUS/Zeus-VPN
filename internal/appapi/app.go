@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -339,6 +340,32 @@ func (a *App) CompleteWebLogin(email, sessionToken string) error {
 func (a *App) CompleteWebLoginTokens(email string, tokens store.Tokens) error {
 	if email == "" {
 		if p, perr := mozilla.FetchProfile(tokens.AccessToken); perr == nil {
+			email = p.Email
+		}
+	}
+	if err := a.eng.Auth.AddWebAccountTokens(email, tokens); err != nil {
+		return err
+	}
+	a.eng.Log("info", "signed in as "+email+" (web sign-in)")
+	a.emitState()
+	go a.RefreshQuotas()
+	return nil
+}
+
+// CompleteWebLoginToken stores the account from a web sign-in whose OAuth
+// tokens were already exchanged inside the sign-in page (mobile webviews).
+func (a *App) CompleteWebLoginToken(email, accessToken, refreshToken, expiresIn string) error {
+	if accessToken == "" {
+		return errors.New("the sign-in page did not return an access token")
+	}
+	n, _ := strconv.ParseInt(expiresIn, 10, 64)
+	if n <= 0 {
+		n = 86400
+	}
+	tokens := store.Tokens{AccessToken: accessToken, RefreshToken: refreshToken,
+		Scope: "profile https://identity.mozilla.com/apps/vpn", ObtainedAt: time.Now(), ExpiresIn: n}
+	if email == "" {
+		if p, perr := mozilla.FetchProfile(accessToken); perr == nil {
 			email = p.Email
 		}
 	}

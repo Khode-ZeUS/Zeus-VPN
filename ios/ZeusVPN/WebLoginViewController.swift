@@ -25,6 +25,51 @@ final class WebLoginViewController: UIViewController, WKScriptMessageHandler, WK
       try { t.dispatchEvent(new CustomEvent('WebChannelMessageToContent', {detail: JSON.stringify(envelope)})); } catch (e) {}
     });
   };
+  var zeusExchange = function(sessionToken, email) {
+    var enc = new TextEncoder();
+    var b64 = function(buf) { var s = btoa(String.fromCharCode.apply(null, new Uint8Array(buf))); return s; };
+    crypto.subtle.importKey('raw', new Uint8Array(sessionToken.match(/.{2}/g).map(function(h) { return parseInt(h, 16); })), 'HKDF', false, ['deriveBits'])
+      .then(function(base) {
+        return crypto.subtle.deriveBits({name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32),
+          info: enc.encode('identity.mozilla.com/picl/v1/sessionToken')}, base, 512);
+      })
+      .then(function(expanded) {
+        expanded = new Uint8Array(expanded);
+        var tokenID = Array.prototype.map.call(expanded.slice(0, 32), function(x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+        var ts = String(Math.floor(Date.now() / 1000));
+        var nb = crypto.getRandomValues(new Uint8Array(6));
+        var nonce = b64(nb).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        var body = JSON.stringify({client_id: '5882386c6d801776', grant_type: 'fxa-credentials',
+          scope: 'profile https://identity.mozilla.com/apps/vpn', access_type: 'offline'});
+        return crypto.subtle.digest('SHA-256', enc.encode('hawk.1.payload\napplication/json\n' + body + '\n'))
+          .then(function(ph) {
+            var payloadHash = b64(ph);
+            var normalized = ['hawk.1.header', ts, nonce, 'POST', '/v1/oauth/token',
+              'api.accounts.firefox.com', '443', payloadHash, '', ''].join('\n');
+            return crypto.subtle.importKey('raw', expanded.slice(32), {name: 'HMAC', hash: 'SHA-256'}, false, ['sign'])
+              .then(function(hk) { return crypto.subtle.sign('HMAC', hk, enc.encode(normalized)); })
+              .then(function(mac) {
+                var header = 'Hawk id="' + tokenID + '", ts="' + ts + '", nonce="' + nonce +
+                  '", mac="' + mac + '", hash="' + payloadHash + '"';
+                return fetch('https://api.accounts.firefox.com/v1/oauth/token', {method: 'POST',
+                  headers: {'Content-Type': 'application/json', 'Authorization': header}, body: body});
+              });
+          })
+          .then(function(res) {
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            return res.json();
+          })
+          .then(function(out) {
+            window.webkit.messageHandlers.zeusWebLogin.postMessage(JSON.stringify(
+              {command: 'tokens', access: out.access_token || '', refresh: out.refresh_token || '',
+               expires: String(out.expires_in || 86400), email: email}));
+          });
+      })
+      .catch(function(e) {
+        window.webkit.messageHandlers.zeusWebLogin.postMessage(JSON.stringify(
+          {command: 'login', token: sessionToken, email: email, verified: true}));
+      });
+  };
   var forward = function(detail) {
     try {
       var host = window.location.hostname;
@@ -36,9 +81,14 @@ final class WebLoginViewController: UIViewController, WKScriptMessageHandler, WK
       var token = String(data.sessionToken || data.token || '').trim();
       var verified = (data.verified === undefined) ? true : !!data.verified;
       if (cmd === 'fxaccounts:login' || cmd === 'fxaccounts:oauth_login' || /verified/i.test(cmd)) {
-        window.webkit.messageHandlers.zeusWebLogin.postMessage(JSON.stringify(
-          {command: cmd, token: token, email: data.email || '', verified: verified}));
         if (msg.messageId) reply(msg.messageId, cmd, {ok:true});
+        if (!token) return;
+        if (verified) {
+          zeusExchange(token, data.email || '');
+        } else {
+          window.webkit.messageHandlers.zeusWebLogin.postMessage(JSON.stringify(
+            {command: cmd, token: token, email: data.email || '', verified: verified}));
+        }
         return;
       }
       if (msg.messageId) reply(msg.messageId, cmd, {ok:true});
@@ -103,6 +153,14 @@ final class WebLoginViewController: UIViewController, WKScriptMessageHandler, WK
         let email = msg["email"] as? String ?? ""
         let verified = msg["verified"] as? Bool ?? true
 
+        if command == "tokens" {
+            let access = msg["access"] as? String ?? ""
+            let refresh = msg["refresh"] as? String ?? ""
+            let expires = msg["expires"] as? String ?? ""
+            completeLoginTokens(email: email, access: access, refresh: refresh, expires: expires)
+            return
+        }
+
         let isToken = token.count == 64 && token.allSatisfy { $0.isHexDigit }
         if isToken && (verified || pendingToken != nil) {
             pendingToken = nil
@@ -122,6 +180,16 @@ final class WebLoginViewController: UIViewController, WKScriptMessageHandler, WK
         DispatchQueue.global(qos: .userInitiated).async {
             var error: NSError?
             _ = ZeuscoreCall("CompleteWebLogin", jsonArgs([email, sessionToken]), &error)
+            DispatchQueue.main.async { [weak self] in
+                self?.dismiss(animated: true)
+            }
+        }
+    }
+
+    private func completeLoginTokens(email: String, access: String, refresh: String, expires: String) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            var error: NSError?
+            _ = ZeuscoreCall("CompleteWebLoginToken", jsonArgs([email, access, refresh, expires]), &error)
             DispatchQueue.main.async { [weak self] in
                 self?.dismiss(animated: true)
             }

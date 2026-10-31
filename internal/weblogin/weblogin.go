@@ -11,6 +11,9 @@
 package weblogin
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -35,14 +38,15 @@ type Result struct {
 }
 
 // Login is one web sign-in flow: a loopback receiver plus the pieces the
-// platform webview needs (page URL, hook script).
+// platform webview needs (page URL, hook script). The receiver only accepts
+// deliveries carrying the login's one-time nonce, and its responses are
+// no-store (tokens must never land in a cache).
 type Login struct {
 	ln       net.Listener
 	receiver string
+	nonce    string
 	result   chan Result
 	mu       sync.Mutex
-	pending  string // unverified token, delivered once verification shows
-	pendMail string
 	stopped  bool
 }
 
@@ -52,14 +56,33 @@ func Start() (*Login, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not open the sign-in receiver: %w", err)
 	}
-	l := &Login{ln: ln, receiver: "http://" + ln.Addr().String(), result: make(chan Result, 4)}
+	nb := make([]byte, 16)
+	if _, err := rand.Read(nb); err != nil {
+		return nil, fmt.Errorf("could not generate the sign-in nonce: %w", err)
+	}
+	l := &Login{ln: ln, receiver: "http://" + ln.Addr().String(),
+		nonce: hex.EncodeToString(nb), result: make(chan Result, 4)}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/token", l.token)
-	mux.HandleFunc("/session", l.session)
-	mux.HandleFunc("/cancel", l.cancel)
+	mux.HandleFunc("/tokens", l.guard(l.token))
+	mux.HandleFunc("/session", l.guard(l.session))
+	mux.HandleFunc("/cancel", l.guard(l.cancel))
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5}
 	go srv.Serve(ln)
 	return l, nil
+}
+
+// guard rejects deliveries without this login's nonce and marks every
+// response uncacheable.
+func (l *Login) guard(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("nonce") != l.nonce {
+			w.Header().Set("Cache-Control", "no-store")
+			w.WriteHeader(403)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		next(w, r)
+	}
 }
 
 // Stop closes the receiver; the flow is over either way.
@@ -97,7 +120,8 @@ func (l *Login) token(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	email := q.Get("email")
 
-	if at := q.Get("access_token"); at != "" {
+	if q.Get("kind") == "tokens" {
+		at := q.Get("access_token")
 		expires, _ := strconv.Atoi(q.Get("expires_in"))
 		if expires <= 0 {
 			expires = 86400
@@ -121,8 +145,8 @@ func (l *Login) token(w http.ResponseWriter, r *http.Request) {
 	writeDelivered(w)
 }
 
-// session handles the fallback handover of an unverified session (the
-// in-page exchange failed; the engine exchanges it from its own path).
+// session handles the fallback handover of a session (the in-page exchange
+// failed; the engine exchanges it from its own path).
 func (l *Login) session(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	token := q.Get("token")
@@ -145,8 +169,13 @@ func (l *Login) Result() <-chan Result { return l.result }
 
 // HookJS returns the shared in-page sign-in hook with the given delivery
 // expression (see hook.go).
-func (l *Login) HookJS(deliver string) string { return HookJS(deliver) }
+func (l *Login) HookJS(deliver string) string { return HookJS(deliver, l.nonce) }
 
 // ReceiverURL is the base URL of the loopback receiver (for platform// ReceiverURL is the base URL of the loopback receiver (for platform
 // delivery adapters that navigate to it).
 func (l *Login) ReceiverURL() string { return l.receiver }
+
+func jsString(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}

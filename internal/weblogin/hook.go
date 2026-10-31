@@ -18,10 +18,11 @@ import "regexp"
 // The host must also define window.__zeusDeliver with the same semantics
 // before navigating to PageURL (the hook uses it for internal handovers),
 // and re-run this script on every page load (it is idempotent).
-func HookJS(deliver string) string {
+func HookJS(deliver, nonce string) string {
 	hook := "(function(){\n"
 	hook += "if (window.__zeusHooked) return; window.__zeusHooked = true;\n"
 	hook += "var exchangeFailed = false;\n"
+	hook += "var NONCE = " + jsString(nonce) + ";\n"
 	hook += "var __deliver = " + deliver + ";\n"
 	hook += uaSpoof
 	hook += webChannelReply
@@ -37,8 +38,8 @@ const DeliverShim = `window.__zeusDeliver = function(q) { __deliver(q); };`
 
 // InjectJS returns the script the host runs on every page load: the
 // delivery shim followed by the shared hook (both idempotent).
-func InjectJS(deliver string) string {
-	return DeliverShim + "\n" + HookJS(deliver)
+func InjectJS(deliver, nonce string) string {
+	return DeliverShim + "\n" + HookJS(deliver, nonce)
 }
 
 // Result query kinds delivered to the host.

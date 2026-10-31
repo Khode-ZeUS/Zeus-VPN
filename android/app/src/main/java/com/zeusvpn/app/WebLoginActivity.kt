@@ -76,15 +76,17 @@ class WebLoginActivity : Activity() {
             userAgentString = "Mozilla/5.0 (Android 14; Mobile; rv:132.0) Gecko/132.0 Firefox/132.0"
         }
         web.addJavascriptInterface(Bridge(), "zeusWebLogin")
+        web.addJavascriptInterface(Bridge(), "zeusWebLogin")
         // The shared hook (WebChannel + in-page exchange) comes from the Go
         // engine so every platform runs the same logic; this side only
         // provides the delivery bridge.
+        val deliver = "function(q) { zeusWebLogin.deliver(q); }"
         val hook = runCatching {
-            Core.call("WebLoginHook", """["function(q) { zeusWebLogin.deliver(q); }"]""")
+            Core.call("WebLoginHook", "[" + org.json.JSONObject.quote(deliver) + "]")
         }.getOrDefault("")
         web.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) {
-                view.evaluateJavascript("window.__zeusDeliver = function(q) { zeusWebLogin.deliver(q); };", null)
+                view.evaluateJavascript("window.__zeusDeliver = " + org.json.JSONObject.quote(deliver) + ";", null)
                 view.evaluateJavascript(hook, null)
             }
         }

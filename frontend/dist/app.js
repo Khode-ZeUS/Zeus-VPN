@@ -19,6 +19,7 @@ let usageData = null;     // last GetUsage result (refreshed live while open)
 let usageTimer = null;    // usage sheet refresh interval
 let usageApps = null;     // last GetAppUsage result (Windows)
 let expandedApp = null;   // the app whose destinations are shown
+let webLoginPending = false; // a web sign-in is in progress in the webview
 
 const GLOBE = '<svg viewBox="0 0 24 24"><path d="M12 2l2.4 5.6L20 8.3l-4.3 4 1.2 6L12 15.4 7.1 18.3l1.2-6L4 8.3l5.6-.7Z"/></svg>';
 const CHEVRON = '<svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>';
@@ -188,14 +189,16 @@ function render() {
   if (!snap) return;
   applyPlatform();
   renderAccounts();
-  if (snap.loggedIn && addingAccount) {
+  if (webLoginPending && snap.loggedIn) {
     // The web sign-in finished successfully — return to the app instead of
     // staying on the login view.
+    webLoginPending = false;
     addingAccount = false;
   }
   if (!snap.loggedIn || addingAccount) {
     $("#login-cancel").hidden = !snap.loggedIn;
     $("#login-subtitle").textContent = snap.loggedIn ? "Add another Mozilla account" : "Sign in with your Mozilla account";
+    $("#login-error").textContent = snap.error || "";
     showView("view-login");
     return;
   }
@@ -562,6 +565,7 @@ async function elevate() {
 
 // ---------- web sign-in (the API password route is edge-blocked) ----------
 async function startWebLogin() {
+  webLoginPending = true;
   try { localStorage.setItem("zeusAppURL", location.origin + location.pathname); } catch (e) {}
   $("#login-error").textContent = "Opening the Firefox sign-in page…";
   try {

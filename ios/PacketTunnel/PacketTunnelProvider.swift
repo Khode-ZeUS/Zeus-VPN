@@ -53,11 +53,7 @@ private final class TunnelHost: NSObject, ZeuscoreHostProtocol {
         v4.includedRoutes = [NEIPv4Route.default()]
         var excluded4: [NEIPv4Route] = []
         if cfg["bypassLan"] as? Bool == true {
-            excluded4 += [
-                NEIPv4Route(destinationAddress: "10.0.0.0", subnetMask: "255.0.0.0"),
-                NEIPv4Route(destinationAddress: "192.168.0.0", subnetMask: "255.255.0.0"),
-                NEIPv4Route(destinationAddress: "169.254.0.0", subnetMask: "255.255.0.0"),
-            ]
+            excluded4 += Self.localNetworkExclusions()
         }
         var excluded6: [NEIPv6Route] = []
         // Keep the VPN server itself off the tunnel: the engine's own
@@ -93,6 +89,40 @@ private final class TunnelHost: NSObject, ZeuscoreHostProtocol {
     }
 
     func closeTun() {}
+
+    /// Excludes private/link-local networks without excluding the shared
+    /// tunnel interface and DNS range (172.19.0.0/30). A broad 172.16/12
+    /// exclusion would otherwise route the engine's own virtual DNS address
+    /// outside the packet tunnel. The remaining CIDR blocks cover the full
+    /// private range while keeping that internal /30 in the tunnel.
+    private static func localNetworkExclusions() -> [NEIPv4Route] {
+        [
+            // RFC 1918 and IPv4 link-local ranges.
+            NEIPv4Route(destinationAddress: "10.0.0.0", subnetMask: "255.0.0.0"),
+            NEIPv4Route(destinationAddress: "192.168.0.0", subnetMask: "255.255.0.0"),
+            NEIPv4Route(destinationAddress: "169.254.0.0", subnetMask: "255.255.0.0"),
+
+            // 172.16.0.0/12, split around the tunnel's 172.19.0.0/30.
+            NEIPv4Route(destinationAddress: "172.16.0.0", subnetMask: "255.254.0.0"),
+            NEIPv4Route(destinationAddress: "172.18.0.0", subnetMask: "255.255.0.0"),
+            NEIPv4Route(destinationAddress: "172.19.0.4", subnetMask: "255.255.255.252"),
+            NEIPv4Route(destinationAddress: "172.19.0.8", subnetMask: "255.255.255.248"),
+            NEIPv4Route(destinationAddress: "172.19.0.16", subnetMask: "255.255.255.240"),
+            NEIPv4Route(destinationAddress: "172.19.0.32", subnetMask: "255.255.255.224"),
+            NEIPv4Route(destinationAddress: "172.19.0.64", subnetMask: "255.255.255.192"),
+            NEIPv4Route(destinationAddress: "172.19.0.128", subnetMask: "255.255.255.128"),
+            NEIPv4Route(destinationAddress: "172.19.1.0", subnetMask: "255.255.255.0"),
+            NEIPv4Route(destinationAddress: "172.19.2.0", subnetMask: "255.255.254.0"),
+            NEIPv4Route(destinationAddress: "172.19.4.0", subnetMask: "255.255.252.0"),
+            NEIPv4Route(destinationAddress: "172.19.8.0", subnetMask: "255.255.248.0"),
+            NEIPv4Route(destinationAddress: "172.19.16.0", subnetMask: "255.255.240.0"),
+            NEIPv4Route(destinationAddress: "172.19.32.0", subnetMask: "255.255.224.0"),
+            NEIPv4Route(destinationAddress: "172.19.64.0", subnetMask: "255.255.192.0"),
+            NEIPv4Route(destinationAddress: "172.19.128.0", subnetMask: "255.255.128.0"),
+            NEIPv4Route(destinationAddress: "172.20.0.0", subnetMask: "255.252.0.0"),
+            NEIPv4Route(destinationAddress: "172.24.0.0", subnetMask: "255.248.0.0"),
+        ]
+    }
 
     private static func mask(_ bits: Int) -> String {
         let m = bits == 0 ? UInt32(0) : ~UInt32(0) << UInt32(32 - bits)

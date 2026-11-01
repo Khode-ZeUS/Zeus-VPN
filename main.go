@@ -36,12 +36,14 @@ func main() {
 	app := NewApp(slices.Contains(os.Args, "--connect"), slices.Contains(os.Args, "--minimized"))
 	opts := &options.App{
 		Title:            appTitle,
-		Width:            390,
-		Height:           720,
-		DisableResize:    true,
+		Width:            1280,
+		Height:           820,
+		MinWidth:         1040,
+		MinHeight:        700,
+		DisableResize:    false,
 		Frameless:        true,
 		StartHidden:      false,
-		BackgroundColour: &options.RGBA{R: 9, G: 11, B: 26, A: 255},
+		BackgroundColour: &options.RGBA{R: 8, G: 13, B: 24, A: 255},
 		AssetServer:      &assetserver.Options{Assets: assets},
 		OnStartup:        app.startup,
 		OnDomReady:       app.domReady,

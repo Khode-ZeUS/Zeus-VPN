@@ -22,8 +22,12 @@ import androidx.webkit.WebViewAssetLoader
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 /**
  * Shows the shared web UI (frontend/dist, packaged as assets) and connects
@@ -34,14 +38,27 @@ class MainActivity : Activity() {
     companion object {
         private const val REQ_VPN = 1
         private const val REQ_NOTIFICATIONS = 2
+        private const val REQ_WEB_LOGIN = 3
+        private const val VPN_PERMISSION_TIMEOUT_MS = 30_000L
         private const val ORIGIN = "https://appassets.androidplatform.net"
     }
 
     private lateinit var web: WebView
     private val executor = Executors.newCachedThreadPool()
 
+    private val vpnPermissionLock = Any()
+
     @Volatile
     private var vpnPermission: CompletableFuture<Boolean>? = null
+
+    @Volatile
+    private var vpnPermissionRequestActive = false
+
+    @Volatile
+    private var activityDestroyed = false
+
+    @Volatile
+    private var webLoginActive = false
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -90,6 +107,9 @@ class MainActivity : Activity() {
             }
 
             override fun onPageFinished(view: WebView, url: String) {
+                // The shared UI hides controls whose native API contract is not
+                // available on this Android release (route exclusion needs API 33).
+                js("document.documentElement.dataset.androidApi='${Build.VERSION.SDK_INT}';window.applyPlatform&&window.applyPlatform();window.renderSettings&&window.renderSettings()")
                 // Re-apply the insets now that the page can receive them.
                 view.requestApplyInsets()
             }
@@ -133,7 +153,12 @@ class MainActivity : Activity() {
     inner class Bridge {
         @JavascriptInterface
         fun post(message: String) {
-            executor.execute { handle(message) }
+            if (activityDestroyed) return
+            try {
+                executor.execute { handle(message) }
+            } catch (error: java.util.concurrent.RejectedExecutionException) {
+                // The Activity was destroyed while a WebView callback was in flight.
+            }
         }
     }
 
@@ -152,8 +177,23 @@ class MainActivity : Activity() {
             // Web sign-in runs in a native WebView (the FxA page hands the
             // session over through its WebChannel).
             if (method == "StartWebLogin") {
-                startActivity(android.content.Intent(this, WebLoginActivity::class.java))
-                return resolve(id, true, "null")
+                runOnUiThread {
+                    if (activityDestroyed) {
+                        resolve(id, false, "the application is closing")
+                    } else if (webLoginActive) {
+                        resolve(id, false, "sign-in already in progress")
+                    } else {
+                        webLoginActive = true
+                        try {
+                            startActivityForResult(android.content.Intent(this, WebLoginActivity::class.java), REQ_WEB_LOGIN)
+                            resolve(id, true, "null")
+                        } catch (error: Exception) {
+                            webLoginActive = false
+                            resolve(id, false, error.message ?: "could not open sign-in")
+                        }
+                    }
+                }
+                return
             }
             resolve(id, true, Core.call(method, args.toString()))
         } catch (e: Exception) {
@@ -207,27 +247,114 @@ class MainActivity : Activity() {
         return sorted
     }
 
-    /** Asks for the VPN permission if needed; blocks a worker thread. */
+    /** Asks for VPN permission without waiting forever on the bridge worker. */
     private fun ensureVpnPermission(): Boolean {
-        val intent = VpnService.prepare(this) ?: return true
+        if (activityUnavailable()) return false
+        val intent = try {
+            VpnService.prepare(this)
+        } catch (error: Exception) {
+            return false
+        } ?: return true
+
         val result = CompletableFuture<Boolean>()
-        vpnPermission = result
-        runOnUiThread { startActivityForResult(intent, REQ_VPN) }
-        return result.get()
+        synchronized(vpnPermissionLock) {
+            if (activityUnavailable() || vpnPermissionRequestActive) return false
+            vpnPermission = result
+            vpnPermissionRequestActive = true
+        }
+
+        runOnUiThread {
+            val current = synchronized(vpnPermissionLock) {
+                vpnPermission === result && vpnPermissionRequestActive && !result.isDone
+            }
+            if (!current || activityUnavailable()) {
+                cancelVpnPermission(result)
+                return@runOnUiThread
+            }
+            try {
+                startActivityForResult(intent, REQ_VPN)
+            } catch (error: Exception) {
+                completeVpnPermission(result, false)
+            }
+        }
+
+        return try {
+            result.get(VPN_PERMISSION_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        } catch (error: InterruptedException) {
+            Thread.currentThread().interrupt()
+            cancelVpnPermission(result)
+            false
+        } catch (error: TimeoutException) {
+            // The system permission UI may still deliver a late result; keep
+            // the request marker until that callback so it cannot complete a
+            // newer request accidentally.
+            cancelVpnPermission(result)
+            false
+        } catch (error: CancellationException) {
+            false
+        } catch (error: ExecutionException) {
+            false
+        } finally {
+            synchronized(vpnPermissionLock) {
+                if (vpnPermission === result && result.isDone && !vpnPermissionRequestActive) {
+                    vpnPermission = null
+                }
+            }
+        }
     }
+
+    private fun completeVpnPermission(result: CompletableFuture<Boolean>, allowed: Boolean) {
+        synchronized(vpnPermissionLock) {
+            if (vpnPermission !== result || !vpnPermissionRequestActive) return
+            vpnPermissionRequestActive = false
+            vpnPermission = null
+            result.complete(allowed)
+        }
+    }
+
+    private fun cancelVpnPermission(result: CompletableFuture<Boolean>) {
+        synchronized(vpnPermissionLock) {
+            if (vpnPermission !== result || !vpnPermissionRequestActive) return
+            // Keep the active marker until Android sends the matching result;
+            // a late callback must not resolve a future for a different flow.
+            result.cancel(false)
+        }
+    }
+
+    private fun activityUnavailable(): Boolean =
+        activityDestroyed || isFinishing || (android.os.Build.VERSION.SDK_INT >= 17 && isDestroyed)
 
     @Deprecated("Activity result API")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        if (requestCode == REQ_VPN) vpnPermission?.complete(resultCode == RESULT_OK)
+        if (requestCode == REQ_VPN) {
+            val pending = synchronized(vpnPermissionLock) {
+                val current = vpnPermission
+                vpnPermission = null
+                vpnPermissionRequestActive = false
+                current
+            }
+            pending?.complete(resultCode == RESULT_OK)
+        } else if (requestCode == REQ_WEB_LOGIN) {
+            webLoginActive = false
+            if (resultCode != RESULT_OK) {
+                val message = data?.getStringExtra(WebLoginActivity.EXTRA_ERROR)
+                    ?: "Sign-in cancelled."
+                runOnUiThread {
+                    if (!activityUnavailable()) {
+                        js("window.__zeus && window.__zeus.emit('notice', ${JSONObject.quote(message)})")
+                    }
+                }
+            }
+        }
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
     }
 
     @Deprecated("Back gesture API")
     override fun onBackPressed() {
-        // Close an open sheet first; otherwise keep the app (and VPN) running.
+        // Close an open panel or dialog first; otherwise keep the app (and VPN) running.
         web.evaluateJavascript(
-            "(function(){if(document.querySelector('.sheet:not([hidden]),.modal:not([hidden])')){" +
+            "(function(){if(document.querySelector('.modal-panel:not([hidden]),.panel-scrim:not([hidden]),.modal:not([hidden])')){" +
                 "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));return true}return false})()"
         ) { handled -> if (handled != "true") moveTaskToBack(true) }
     }
@@ -238,9 +365,18 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        activityDestroyed = true
+        webLoginActive = false
+        val pendingPermission = synchronized(vpnPermissionLock) {
+            val current = vpnPermission
+            vpnPermission = null
+            vpnPermissionRequestActive = false
+            current
+        }
+        pendingPermission?.cancel(false)
+        executor.shutdownNow()
         Core.listener = null
-        vpnPermission?.complete(false)
-        web.destroy()
+        if (::web.isInitialized) web.destroy()
         super.onDestroy()
     }
 }

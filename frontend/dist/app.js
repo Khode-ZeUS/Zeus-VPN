@@ -77,6 +77,564 @@ let pinging = false;
 let adminReason = "tun";
 let loginStep = null;
 
+// Phase E2 Global Server Map state. The inventory and latency objects remain the
+// backend-provided sources of truth; the map never supplies a location.
+let mapServerLoadState = "idle"; // idle, loading, success, empty, error, stale
+let mapServerLoadError = "";
+let latencyError = "";
+let mapSelectedCountry = null;
+let mapSelectedCity = "";
+let mapSelectionDirty = false;
+let mapTransform = { x: 0, y: 0, scale: 1 };
+let mapGesture = null;
+let mapIgnoreNextClick = false;
+let mapHoveredPath = null;
+
+const MAP_CODE_ALIASES = {
+  UK: "GB", EL: "GR", FRA: "FR", NOR: "NO", "CN-TW": "TW",
+  KOS: "XK", CYN: "CY", SOL: "SO",
+};
+const MAP_COPY = {
+  en: {
+    eyebrow: "ZEUS GLOBAL NETWORK",
+    title: "Global server map",
+    subtitle: "Choose a real server location. Selecting a country never starts a connection.",
+    search: "Search countries or cities",
+    retry: "Retry",
+    loading: "Loading live server inventory…",
+    availableCountries: "Available countries",
+    legendAvailable: "Available in live inventory",
+    legendNeutral: "No server returned",
+    panHint: "Drag to explore · scroll or use + / − to zoom",
+    chooseCountry: "Choose a highlighted country",
+    chooseCountryHint: "Countries without a live server stay neutral and cannot be selected.",
+    available: "Available",
+    inventory: "Inventory",
+    inInventory: "Returned by ZEUS",
+    latency: "Latency",
+    measured: "Measured",
+    cities: "Available cities",
+    noLatency: "Latency not measured",
+    use: "Use this location",
+    current: "Current location",
+    selected: "Selected",
+    locationSaved: "Location saved. Connect when you are ready.",
+    loadingInventory: "Loading server inventory",
+    loadingInventoryHint: "Fetching the locations returned by ZEUS.",
+    emptyInventory: "No server locations returned",
+    emptyInventoryHint: "The server inventory is empty. Nothing can be selected yet.",
+    errorInventory: "Could not load server inventory",
+    errorInventoryHint: "The map is kept neutral until a real inventory is available.",
+    staleInventory: "Showing last loaded inventory",
+    errorPrefix: "Refresh failed: ",
+    noMatches: "No countries or cities match your search.",
+    noLocations: "No locations available.",
+    noCities: "No cities were returned for this country.",
+    cityCountOne: "1 city",
+    cityCountMany: "{n} cities",
+    countryCountOne: "1 country",
+    countryCountMany: "{n} countries",
+    ping: "Test latency",
+    close: "Close",
+    zoomOut: "Zoom out",
+    zoomIn: "Zoom in",
+    reset: "Reset world view",
+    mapAria: "Interactive global server map",
+    mapDescription: "Countries with a ZEUS server are highlighted in antique gold.",
+    language: "Language",
+    mapControls: "Map controls",
+    serverLocations: "Server locations",
+    connection: "Connection",
+    connected: "Connected",
+    selectedAnnouncement: "Selected {name}. Choose a city or apply this location.",
+  },
+  fa: {
+    eyebrow: "شبکه جهانی زئوس",
+    title: "نقشه جهانی سرورها",
+    subtitle: "یک موقعیت واقعی را انتخاب کنید؛ انتخاب کشور اتصال را شروع نمی‌کند.",
+    search: "جست‌وجوی کشور یا شهر",
+    retry: "تلاش دوباره",
+    loading: "در حال بارگذاری فهرست زنده سرورها…",
+    availableCountries: "کشورهای در دسترس",
+    legendAvailable: "در فهرست زنده موجود است",
+    legendNeutral: "سروری برگردانده نشده است",
+    panHint: "برای جابه‌جایی بکشید · برای بزرگ‌نمایی از اسکرول یا + و − استفاده کنید",
+    chooseCountry: "یک کشور طلایی را انتخاب کنید",
+    chooseCountryHint: "کشورهای بدون سرور زنده خنثی هستند و قابل انتخاب نیستند.",
+    available: "در دسترس",
+    inventory: "فهرست سرورها",
+    inInventory: "توسط زئوس برگردانده شد",
+    latency: "تأخیر",
+    measured: "اندازه‌گیری‌شده",
+    cities: "شهرهای در دسترس",
+    noLatency: "تأخیر اندازه‌گیری نشده است",
+    use: "استفاده از این موقعیت",
+    current: "موقعیت فعلی",
+    selected: "انتخاب‌شده",
+    locationSaved: "موقعیت ذخیره شد. هر زمان آماده بودید وصل شوید.",
+    loadingInventory: "در حال بارگذاری فهرست سرورها",
+    loadingInventoryHint: "موقعیت‌های برگردانده‌شده توسط زئوس دریافت می‌شوند.",
+    emptyInventory: "هیچ موقعیت سروری برگردانده نشد",
+    emptyInventoryHint: "فهرست سرورها خالی است؛ هنوز چیزی برای انتخاب وجود ندارد.",
+    errorInventory: "بارگذاری فهرست سرورها ممکن نبود",
+    errorInventoryHint: "تا دریافت فهرست واقعی، نقشه خنثی می‌ماند.",
+    staleInventory: "آخرین فهرست دریافت‌شده نمایش داده می‌شود",
+    errorPrefix: "خطا در تازه‌سازی: ",
+    noMatches: "کشور یا شهری با جست‌وجوی شما پیدا نشد.",
+    noLocations: "موقعیتی در دسترس نیست.",
+    noCities: "برای این کشور شهری برگردانده نشده است.",
+    cityCountOne: "۱ شهر",
+    cityCountMany: "{n} شهر",
+    countryCountOne: "۱ کشور",
+    countryCountMany: "{n} کشور",
+    ping: "آزمون تأخیر",
+    close: "بستن",
+    zoomOut: "کوچک‌نمایی",
+    zoomIn: "بزرگ‌نمایی",
+    reset: "بازنشانی نمای جهان",
+    mapAria: "نقشه تعاملی جهانی سرورها",
+    mapDescription: "کشورهایی که سرور زئوس دارند با حاشیه طلایی مشخص شده‌اند.",
+    language: "زبان",
+    mapControls: "کنترل‌های نقشه",
+    serverLocations: "موقعیت‌های سرور",
+    connection: "اتصال",
+    connected: "متصل",
+    selectedAnnouncement: "{name} انتخاب شد. یک شهر را انتخاب کنید یا موقعیت را اعمال کنید.",
+  },
+};
+
+
+// Local artwork availability only; this is never the live server inventory.
+const LOCAL_FLAG_CODES = new Set("ar at au be bg br ca ch cl co cz de dk es fi fr gb gh gr hk hu ie il in it jp kr lu mx my nl no nz pe ph pl pt ro se sg th tr ua us za".split(" "));
+// ---------- Global Server Map ----------
+function mapT(key) {
+  return (MAP_COPY[locale] && MAP_COPY[locale][key]) || MAP_COPY.en[key] || key;
+}
+function mapFormat(key, n) {
+  return mapT(key).replace("{n}", String(n));
+}
+function mapCountryCode(code) {
+  const upper = String(code || "").toUpperCase();
+  return MAP_CODE_ALIASES[upper] || upper;
+}
+function mapFlagCode(code) {
+  const upper = String(code || "").toUpperCase();
+  return MAP_CODE_ALIASES[upper] || upper;
+}
+function findServerCountry(code) {
+  const wanted = mapCountryCode(code);
+  return servers.find((c) => mapCountryCode(c.code) === wanted) || null;
+}
+function cityCountText(n) {
+  return n === 1 ? mapT("cityCountOne") : mapFormat("cityCountMany", n);
+}
+function countryCountText(n) {
+  return n === 1 ? mapT("countryCountOne") : mapFormat("countryCountMany", n);
+}
+function cityLatency(country, city) {
+  if (!country || !city) return null;
+  const value = latency[`${country.code}/${city.code}`];
+  return typeof value === "number" ? value : null;
+}
+function countryBestLatency(country) {
+  if (!country || !Array.isArray(country.cities)) return null;
+  const values = country.cities.map((city) => cityLatency(country, city)).filter((v) => v != null);
+  if (!values.length) return null;
+  const reachable = values.filter((v) => v >= 0);
+  return reachable.length ? Math.min(...reachable) : -1;
+}
+function sameLocationCountry(a, b) {
+  return !!a && !!b && mapCountryCode(a) === mapCountryCode(b);
+}
+function mapSelectionMatchesSnapshot(country, city) {
+  if (!snap || !snap.settings || !country) return false;
+  return sameLocationCountry(snap.settings.country_code, country.code)
+    && String(snap.settings.city_code || "") === String(city || "");
+}
+function syncMapSelectionFromSnapshot(force = false) {
+  if (!force && mapSelectionDirty) return;
+  const code = snap && snap.settings ? snap.settings.country_code : "";
+  const country = findServerCountry(code);
+  mapSelectedCountry = country ? country.code : null;
+  mapSelectedCity = country ? String(snap.settings.city_code || "") : "";
+}
+function renderMapLocale() {
+  const sheet = $("#screen-locations");
+  if (!sheet) return;
+  sheet.dir = locale === "fa" ? "rtl" : "ltr";
+  sheet.lang = locale === "fa" ? "fa" : "en";
+  for (const el of $$('[data-map-copy]')) {
+    const key = el.dataset.mapCopy;
+    if (MAP_COPY[locale] && MAP_COPY[locale][key]) el.textContent = mapT(key);
+  }
+  for (const el of $$('[data-map-copy-placeholder]')) el.placeholder = mapT(el.dataset.mapCopyPlaceholder);
+  for (const el of $$('[data-map-copy-title]')) {
+    const label = mapT(el.dataset.mapCopyTitle);
+    el.title = label;
+    if (el.tagName === "BUTTON") el.setAttribute("aria-label", label);
+  }
+  const viewport = $("#map-viewport");
+  if (viewport) viewport.setAttribute("aria-label", mapT("mapAria"));
+  const mapTitle = $("#map-title");
+  const mapDescription = $("#map-desc");
+  if (mapTitle) mapTitle.textContent = mapT("title");
+  if (mapDescription) mapDescription.textContent = mapT("mapDescription");
+  const localeGroup = $(".map-locale");
+  const controlsGroup = $(".map-controls");
+  const detailColumn = $(".map-detail-column");
+  if (localeGroup) localeGroup.setAttribute("aria-label", mapT("language"));
+  if (controlsGroup) controlsGroup.setAttribute("aria-label", mapT("mapControls"));
+  if (detailColumn) detailColumn.setAttribute("aria-label", mapT("serverLocations"));
+  for (const button of $$('[data-map-locale]')) {
+    const active = button.dataset.mapLocale === locale;
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  }
+  const retry = $("#map-overlay-retry");
+  if (retry) retry.textContent = mapT("retry");
+  if (servers.length || mapServerLoadState !== "idle") renderServers();
+}
+function announceMap(text) {
+  let live = $("#map-live-announcement");
+  if (!live) {
+    live = document.createElement("div");
+    live.id = "map-live-announcement";
+    live.className = "sr-only";
+    live.setAttribute("aria-live", "polite");
+    $("#map-viewport")?.appendChild(live);
+  }
+  live.textContent = text;
+}
+function applyMapTransform() {
+  const stage = $("#world-map-stage");
+  if (!stage) return;
+  stage.setAttribute("transform", `translate(${mapTransform.x.toFixed(2)} ${mapTransform.y.toFixed(2)}) scale(${mapTransform.scale.toFixed(3)})`);
+  const level = $("#map-zoom-level");
+  if (level) level.textContent = `${Math.round(mapTransform.scale * 100)}%`;
+  const out = $("#map-zoom-out");
+  const inButton = $("#map-zoom-in");
+  if (out) out.disabled = mapTransform.scale <= 0.8;
+  if (inButton) inButton.disabled = mapTransform.scale >= 4;
+}
+function mapPointFromEvent(event) {
+  const svg = $("#world-map");
+  if (!svg) return { x: 500, y: 250 };
+  try {
+    const point = svg.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const ctm = svg.getScreenCTM();
+    if (ctm) return point.matrixTransform(ctm.inverse());
+  } catch (e) {}
+  const rect = svg.getBoundingClientRect();
+  return { x: ((event.clientX - rect.left) / rect.width) * 1000, y: ((event.clientY - rect.top) / rect.height) * 500 };
+}
+function zoomMap(factor, event = null) {
+  const next = Math.max(0.8, Math.min(4, mapTransform.scale * factor));
+  if (next === mapTransform.scale) return;
+  const anchor = event ? mapPointFromEvent(event) : { x: 500, y: 250 };
+  const before = { x: (anchor.x - mapTransform.x) / mapTransform.scale, y: (anchor.y - mapTransform.y) / mapTransform.scale };
+  mapTransform.scale = next;
+  mapTransform.x = anchor.x - before.x * next;
+  mapTransform.y = anchor.y - before.y * next;
+  applyMapTransform();
+}
+function panMap(clientDX, clientDY) {
+  const viewport = $("#map-viewport");
+  if (!viewport) return;
+  const rect = viewport.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  mapTransform.x += clientDX * 1000 / rect.width;
+  mapTransform.y += clientDY * 500 / rect.height;
+  applyMapTransform();
+}
+function resetMapView() {
+  mapTransform = { x: 0, y: 0, scale: 1 };
+  applyMapTransform();
+}
+function updateMapPaths() {
+  const available = new Map();
+  for (const country of servers) available.set(mapCountryCode(country.code), country);
+  for (const path of $$("#world-map path[data-map-code]")) {
+    const code = mapCountryCode(path.dataset.mapCode);
+    const country = available.get(code);
+    const isAvailable = !!country;
+    path.classList.toggle("available", isAvailable);
+    path.classList.toggle("selected", isAvailable && sameLocationCountry(mapSelectedCountry, country.code));
+    path.setAttribute("tabindex", isAvailable ? "0" : "-1");
+    path.setAttribute("aria-hidden", isAvailable ? "false" : "true");
+    path.setAttribute("role", isAvailable ? "button" : "presentation");
+    if (isAvailable) {
+      path.setAttribute("aria-label", `${country.name || country.code}. ${cityCountText((country.cities || []).length)}`);
+    } else {
+      path.removeAttribute("aria-label");
+    }
+  }
+  applyMapTransform();
+}
+function mapStatusFor(country) {
+  const pings = countryBestLatency(country);
+  return pings == null ? "" : `<span class="ping ${pingClass(pings)}">${esc(pingText(pings))}</span>`;
+}
+function renderMapStatus() {
+  const note = $("#map-inventory-note");
+  const overlay = $("#map-overlay");
+  const title = $("#map-overlay-title");
+  const message = $("#map-overlay-message");
+  const retry = $("#map-retry");
+  const overlayRetry = $("#map-overlay-retry");
+  if (!note || !overlay || !title || !message) return;
+  note.className = "map-inventory-note";
+  let showOverlay = false;
+  let showRetry = false;
+  if (mapServerLoadState === "loading" || mapServerLoadState === "idle") {
+    note.textContent = mapT("loading");
+    showOverlay = !servers.length;
+    title.textContent = mapT("loadingInventory");
+    message.textContent = mapT("loadingInventoryHint");
+  } else if (mapServerLoadState === "empty") {
+    note.classList.add("warn");
+    note.textContent = mapT("emptyInventory");
+    showOverlay = true;
+    showRetry = true;
+    title.textContent = mapT("emptyInventory");
+    message.textContent = mapT("emptyInventoryHint");
+  } else if (mapServerLoadState === "error") {
+    note.classList.add("error");
+    note.textContent = mapT("errorInventory");
+    showOverlay = true;
+    showRetry = true;
+    title.textContent = mapT("errorInventory");
+    message.textContent = mapT("errorInventoryHint");
+  } else if (mapServerLoadState === "stale") {
+    note.classList.add("warn");
+    note.textContent = mapT("staleInventory");
+    showRetry = true;
+  } else {
+    note.classList.add("ready");
+    note.textContent = `${countryCountText(servers.length)} · ${mapT("inInventory")}`;
+  }
+  retry.hidden = !showRetry;
+  if (overlayRetry) overlayRetry.hidden = !showRetry;
+  overlay.hidden = !showOverlay;
+  updateMapPaths();
+}
+function renderMapCountryList() {
+  const list = $("#server-list");
+  const count = $("#map-country-count");
+  if (!list) return;
+  const query = ($("#server-search")?.value || "").trim().toLowerCase();
+  if ((mapServerLoadState === "loading" || mapServerLoadState === "idle") && !servers.length) {
+    list.innerHTML = `<div class="list-msg">${esc(mapT("loading"))}</div>`;
+  } else if (mapServerLoadState === "error" && !servers.length) {
+    list.innerHTML = `<div class="list-msg"><b>${esc(mapT("errorInventory"))}</b><span>${esc(mapServerLoadError || mapT("errorInventoryHint"))}</span><button type="button" data-map-retry>${esc(mapT("retry"))}</button></div>`;
+  } else if (mapServerLoadState === "empty" && !servers.length) {
+    list.innerHTML = `<div class="list-msg"><b>${esc(mapT("emptyInventory"))}</b><span>${esc(mapT("emptyInventoryHint"))}</span></div>`;
+  } else {
+    const matches = servers.filter((country) => {
+      const name = String(country.name || "").toLowerCase();
+      const code = String(country.code || "").toLowerCase();
+      const cityMatch = (country.cities || []).some((city) => String(city.name || city.code || "").toLowerCase().includes(query));
+      return !query || name.includes(query) || code.includes(query) || cityMatch;
+    });
+    if (count) count.textContent = query ? `${matches.length}/${servers.length}` : countryCountText(servers.length);
+    if (!matches.length) {
+      list.innerHTML = `<div class="list-msg">${esc(mapT("noMatches"))}</div>`;
+    } else {
+      list.innerHTML = matches.map((country) => {
+        const name = country.name || country.code;
+        const code = mapFlagCode(country.code);
+        const selected = sameLocationCountry(mapSelectedCountry, country.code);
+        const cities = country.cities || [];
+        return `<button type="button" class="map-country-row ${selected ? "selected" : ""}" data-map-country="${esc(country.code)}" aria-pressed="${selected ? "true" : "false"}">
+          <span class="flag" style="background-image:url(flags/${esc(code.toLowerCase())}.svg)">${flagHTML(code)}</span>
+          <span class="name"><b>${esc(name)}</b><small>${esc(cityCountText(cities.length))}</small></span>
+          <span class="map-row-status">${esc(mapT("available"))}</span>
+          ${mapStatusFor(country)}
+        </button>`;
+      }).join("");
+    }
+  }
+  if (count && !query && (mapServerLoadState === "loading" || mapServerLoadState === "idle")) count.textContent = servers.length ? countryCountText(servers.length) : "";
+}
+function renderMapDetail() {
+  const detail = $("#map-detail");
+  if (!detail) return;
+  const country = findServerCountry(mapSelectedCountry);
+  if (!country) {
+    detail.innerHTML = `<div class="map-empty-detail"><span class="map-detail-emblem"><svg viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6Z"/><path d="M12 8v5M12 16h.01"/></svg></span><b>${esc(mapT("chooseCountry"))}</b><p>${esc(mapT("chooseCountryHint"))}</p></div>`;
+    return;
+  }
+  const cities = Array.isArray(country.cities) ? country.cities : [];
+  const selectedCity = cities.find((city) => String(city.code) === String(mapSelectedCity)) || null;
+  const current = mapSelectionMatchesSnapshot(country, selectedCity ? selectedCity.code : "");
+  const best = countryBestLatency(country);
+  const latencyData = best == null ? "" : `<div class="map-data-item"><span>${esc(mapT("latency"))}</span><b class="ping ${pingClass(best)}">${esc(pingText(best))}</b></div>`;
+  const connected = snap && snap.status === "connected" && snap.server && sameLocationCountry(snap.server.countryCode, country.code);
+  const statusData = connected ? `<div class="map-data-item"><span>${esc(mapT("connection"))}</span><b>${esc(mapT("connected"))}</b></div>` : "";
+  const currentData = current ? `<div class="map-data-item"><span>${esc(mapT("selected"))}</span><b>${esc(mapT("current"))}</b></div>` : "";
+  const cityRows = cities.length ? cities.map((city) => {
+    const ms = cityLatency(country, city);
+    const chosen = String(city.code) === String(mapSelectedCity);
+    const isCurrent = sameLocationCountry(snap?.settings?.country_code, country.code) && String(snap?.settings?.city_code || "") === String(city.code);
+    return `<button type="button" class="map-city-row ${chosen ? "selected" : ""}" data-map-city="${esc(city.code)}" aria-pressed="${chosen ? "true" : "false"}">
+      <span>${esc(city.name || city.code)}</span>
+      ${isCurrent ? `<span class="current-city">${esc(mapT("current"))}</span>` : ""}
+      ${ms != null ? `<span class="ping ${pingClass(ms)}">${esc(pingText(ms))}</span>` : ""}
+    </button>`;
+  }).join("") : `<p class="map-empty-city">${esc(mapT("noCities"))}</p>`;
+  const buttonLabel = current ? mapT("current") : mapT("use");
+  detail.innerHTML = `<div class="map-detail-hero"><span class="flag map-detail-flag" id="map-detail-flag"></span><div class="map-detail-title"><h4>${esc(country.name || country.code)}</h4><p>${esc(mapT("available"))} · ${esc(cityCountText(cities.length))}</p></div><span class="map-availability">${esc(mapT("available"))}</span></div>
+    <div class="map-data-strip"><div class="map-data-item"><span>${esc(mapT("inventory"))}</span><b>${esc(mapT("inInventory"))}</b></div>${latencyData}${statusData}${currentData}</div>
+    <div class="map-city-heading"><span>${esc(mapT("cities"))}</span><span>${esc(cityCountText(cities.length))}</span></div>
+    <div class="map-city-list">${cityRows}</div>
+    <button type="button" class="map-use-location" data-map-use-location ${current ? "disabled" : ""}>${esc(buttonLabel)}</button>`;
+  setFlag($("#map-detail-flag"), mapFlagCode(country.code));
+}
+function renderServers() {
+  renderMapStatus();
+  renderMapCountryList();
+  renderMapDetail();
+}
+function selectMapCountry(code, cityCode = null) {
+  const country = findServerCountry(code);
+  if (!country) return;
+  mapSelectedCountry = country.code;
+  if (cityCode !== null) {
+    mapSelectedCity = String(cityCode || "");
+  } else if (snap && snap.settings && sameLocationCountry(snap.settings.country_code, country.code)) {
+    mapSelectedCity = String(snap.settings.city_code || "");
+  } else {
+    mapSelectedCity = "";
+  }
+  mapSelectionDirty = true;
+  renderServers();
+  announceMap(mapT("selectedAnnouncement").replace("{name}", country.name || country.code));
+}
+function selectMapCity(code) {
+  const country = findServerCountry(mapSelectedCountry);
+  if (!country) return;
+  const city = (country.cities || []).find((item) => String(item.code) === String(code));
+  if (!city) return;
+  mapSelectedCity = city.code;
+  mapSelectionDirty = true;
+  renderMapDetail();
+  renderMapCountryList();
+  announceMap(`${city.name || city.code}. ${mapT("selected")}.`);
+}
+async function useMapLocation(button) {
+  const country = findServerCountry(mapSelectedCountry);
+  if (!country) return;
+  const city = mapSelectedCity || "";
+  if (button) { button.disabled = true; button.classList.add("loading"); }
+  try {
+    // This is deliberately the existing selection API only. It does not
+    // call Connect; an active tunnel keeps the backend's existing lifecycle.
+    await api().SetLocation(country.code, city);
+    await refreshSnapshot();
+    mapSelectionDirty = false;
+    syncMapSelectionFromSnapshot(true);
+    renderServers();
+    navigate("home");
+    toast(mapT("locationSaved"));
+  } catch (e) {
+    if (button) { button.disabled = false; button.classList.remove("loading"); }
+    toast(errText(e));
+  }
+}
+function mapPathFromTarget(target) {
+  if (!target || !target.closest) return null;
+  const path = target.closest("path[data-map-code]");
+  return path && path.classList.contains("available") ? path : null;
+}
+function hideMapTooltip() {
+  const tooltip = $("#map-tooltip");
+  if (tooltip) tooltip.hidden = true;
+  if (mapHoveredPath) mapHoveredPath.classList.remove("hover");
+  mapHoveredPath = null;
+}
+function showMapTooltip(path, event) {
+  if (!path || !event || event.pointerType === "touch") return;
+  const country = findServerCountry(path.dataset.mapCode);
+  const tooltip = $("#map-tooltip");
+  const viewport = $("#map-viewport");
+  if (!country || !tooltip || !viewport) return;
+  if (mapHoveredPath && mapHoveredPath !== path) mapHoveredPath.classList.remove("hover");
+  mapHoveredPath = path;
+  path.classList.add("hover");
+  $("#map-tooltip-name").textContent = country.name || country.code;
+  $("#map-tooltip-meta").textContent = cityCountText((country.cities || []).length);
+  const rect = viewport.getBoundingClientRect();
+  const x = Math.max(8, Math.min(rect.width - 200, event.clientX - rect.left));
+  const y = Math.max(8, Math.min(rect.height - 54, event.clientY - rect.top));
+  tooltip.style.left = `${x}px`;
+  tooltip.style.top = `${y}px`;
+  tooltip.hidden = false;
+}
+function wireMapInteractions() {
+  const viewport = $("#map-viewport");
+  if (!viewport) return;
+  viewport.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    mapGesture = { id: event.pointerId, x: event.clientX, y: event.clientY, lastX: event.clientX, lastY: event.clientY, moved: false };
+    mapIgnoreNextClick = false;
+    viewport.classList.add("dragging");
+    try { viewport.setPointerCapture(event.pointerId); } catch (e) {}
+  });
+  viewport.addEventListener("pointermove", (event) => {
+    if (mapGesture && mapGesture.id === event.pointerId) {
+      const dx = event.clientX - mapGesture.lastX;
+      const dy = event.clientY - mapGesture.lastY;
+      if (Math.hypot(event.clientX - mapGesture.x, event.clientY - mapGesture.y) > 6) mapGesture.moved = true;
+      if (mapGesture.moved) {
+        panMap(dx, dy);
+        hideMapTooltip();
+      }
+      mapGesture.lastX = event.clientX;
+      mapGesture.lastY = event.clientY;
+    } else if (event.pointerType === "mouse") {
+      showMapTooltip(mapPathFromTarget(event.target), event);
+    }
+  });
+  const finishGesture = (event) => {
+    if (!mapGesture || mapGesture.id !== event.pointerId) return;
+    mapIgnoreNextClick = mapGesture.moved;
+    if (mapIgnoreNextClick) setTimeout(() => { mapIgnoreNextClick = false; }, 450);
+    try { viewport.releasePointerCapture(event.pointerId); } catch (e) {}
+    mapGesture = null;
+    viewport.classList.remove("dragging");
+  };
+  viewport.addEventListener("pointerup", finishGesture);
+  viewport.addEventListener("pointercancel", finishGesture);
+  viewport.addEventListener("pointerover", (event) => {
+    if (event.pointerType === "mouse") showMapTooltip(mapPathFromTarget(event.target), event);
+  });
+  viewport.addEventListener("pointerout", (event) => {
+    if (event.pointerType === "mouse" && !event.relatedTarget?.closest?.("path[data-map-code]")) hideMapTooltip();
+  });
+  viewport.addEventListener("click", (event) => {
+    if (mapIgnoreNextClick) { mapIgnoreNextClick = false; return; }
+    const path = mapPathFromTarget(event.target);
+    if (path) selectMapCountry(path.dataset.mapCode);
+  });
+  viewport.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const path = mapPathFromTarget(event.target);
+    if (!path) return;
+    event.preventDefault();
+    selectMapCountry(path.dataset.mapCode);
+  });
+  viewport.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    zoomMap(event.deltaY < 0 ? 1.18 : 0.84, event);
+  }, { passive: false });
+}
+
+
+function flagHTML(code) {
+  const asset = mapFlagCode(code).toLowerCase();
+  return !code || code === "REC" || !LOCAL_FLAG_CODES.has(asset) ? GLOBE : "";
+}
+
 const GLOBE = '<svg viewBox="0 0 24 24"><path d="M12 2l2.4 5.6L20 8.3l-4.3 4 1.2 6L12 15.4 7.1 18.3l1.2-6L4 8.3l5.6-.7Z"/></svg>';
 const CHEVRON = '<svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>';
 
@@ -184,6 +742,7 @@ function applyLocale() {
   }
   if ($("#set-language")) $("#set-language").value = locale;
   if ($("#set-effects")) $("#set-effects").checked = effectsEnabled;
+  renderMapLocale();
   updateBreadcrumb();
 }
 function setLocale(next) {
@@ -218,8 +777,11 @@ function navigate(screen, load = true) {
   updateNavigation();
   if (!load || !snap || !snap.loggedIn) return;
   if (screen === "locations") {
+    mapSelectionDirty = false;
+    syncMapSelectionFromSnapshot(true);
+    renderMapLocale();
     renderServers();
-    if (!servers.length) loadServers(false);
+    if (!servers.length && mapServerLoadState !== "loading") loadServers(false);
   }
   if (screen === "statistics") loadUsage();
   if (screen === "activity" && !logsLoaded) loadLogs();
@@ -326,6 +888,10 @@ function render() {
   renderHome();
   renderSettings();
   updateNavigation();
+  if (currentScreen === "locations") {
+    if (!mapSelectionDirty) syncMapSelectionFromSnapshot();
+    renderServers();
+  }
   renderStatistics();
   renderActivity();
 }
@@ -493,69 +1059,46 @@ function renderSettings() {
   $("#link-github").onclick = (event) => { event.preventDefault(); api().OpenURL("https://github.com/Arefxxxx/Zeus-VPN"); };
 }
 
-function renderServers() {
-  const list = $("#server-list");
-  if (!list || !snap) return;
-  const search = $("#server-search").value.trim().toLowerCase();
-  const settings = snap.settings || {};
-  const selectedCountry = settings.country_code || "REC";
-  if (!servers.length) {
-    list.innerHTML = `<div class="list-msg">${esc(t("loadingServers"))}</div>`;
-    return;
-  }
-  let html = "";
-  for (const country of servers) {
-    const recommended = country.code === "REC";
-    const name = recommended ? t("recommended") : country.name;
-    const cityMatches = country.cities.filter((city) => !search || city.name.toLowerCase().includes(search));
-    if (search && !name.toLowerCase().includes(search) && !cityMatches.length) continue;
-    const pings = country.cities.map((city) => latency[`${country.code}/${city.code}`]).filter((value) => value != null && value >= 0);
-    const best = pings.length ? Math.min(...pings) : (country.cities.some((city) => latency[`${country.code}/${city.code}`] === -1) ? -1 : null);
-    const open = openCountry === country.code || (search && cityMatches.length && !recommended);
-    const selected = selectedCountry === country.code && (!settings.city_code || recommended);
-    const sub = recommended ? t("fastestAvailable") : `${country.cities.length} ${country.cities.length === 1 ? t("city") : t("cities")}`;
-    html += `<div class="srv-group"><button class="srv ${selected ? "selected" : ""} ${open ? "open" : ""}" data-country="${esc(country.code)}" type="button"><span class="flag" ${recommended ? "" : `style="background-image:url(flags/${esc(country.code.toLowerCase())}.svg)"`}>${recommended ? GLOBE : ""}</span><span class="name"><b>${esc(name)}</b><small>${esc(sub)}</small></span>${best != null ? `<span class="ping ${pingClass(best)}">${esc(pingText(best))}</span>` : ""}${!recommended && country.cities.length > 1 ? `<span class="expand" data-expand="${esc(country.code)}">${CHEVRON}</span>` : ""}</button>`;
-    if (open && !recommended && country.cities.length > 1) {
-      html += '<div class="cities">';
-      for (const city of (search ? cityMatches : country.cities)) {
-        const ms = latency[`${country.code}/${city.code}`];
-        const selectedCity = selectedCountry === country.code && settings.city_code === city.code;
-        html += `<button class="city ${selectedCity ? "selected" : ""}" data-country="${esc(country.code)}" data-city="${esc(city.code)}" type="button"><span>${esc(city.name)}</span>${ms != null ? `<span class="ping ${pingClass(ms)}">${esc(pingText(ms))}</span>` : ""}</button>`;
-      }
-      html += "</div>";
-    }
-    html += "</div>";
-  }
-  list.innerHTML = html || `<div class="list-msg">${esc(t("noMatches"))}</div>`;
-}
 
 async function loadServers(force) {
+  mapServerLoadState = "loading";
+  mapServerLoadError = "";
+  renderServers();
   try {
     const list = await api().GetServers(!!force);
-    list.sort((a, b) => (a.code === "REC" ? -1 : b.code === "REC" ? 1 : a.name.localeCompare(b.name)));
-    servers = list;
+    servers = Array.isArray(list) ? list.slice() : [];
+    servers.sort((a, b) => String(a.name || a.code || "").localeCompare(String(b.name || b.code || ""), locale === "fa" ? "fa" : "en"));
+    mapServerLoadState = servers.length ? "success" : "empty";
+    if (!mapSelectionDirty) syncMapSelectionFromSnapshot(true);
     renderServers();
     renderHome();
   } catch (error) {
-    $("#server-list").innerHTML = `<div class="list-msg">${esc(t("couldNotLoadServers"))}<br>${esc(errText(error))}</div>`;
+    mapServerLoadError = errText(error);
+    // Keep a previously loaded inventory visible, but make its stale state
+    // explicit and offer a retry instead of guessing availability.
+    mapServerLoadState = servers.length ? "stale" : "error";
+    renderServers();
   }
 }
 async function measureLatency() {
   if (pinging) return;
   pinging = true;
-  $("#btn-ping").classList.add("spinning");
+  latencyError = "";
+  const pingButton = $("#btn-ping");
+  if (pingButton) pingButton.classList.add("spinning");
   try {
     latency = await api().GetLatency();
     renderServers();
     renderHome();
   } catch (error) {
-    toast(errText(error));
+    latencyError = errText(error);
+    toast(latencyError);
+    renderServers();
   } finally {
     pinging = false;
-    $("#btn-ping").classList.remove("spinning");
+    if (pingButton) pingButton.classList.remove("spinning");
   }
 }
-
 async function loadUsage() {
   if (usageLoading) return;
   usageLoading = true;
@@ -938,14 +1481,28 @@ function wire() {
     try { await api().SetMode(button.dataset.mode); if (button.dataset.mode === "tun" && !snap.elevated && snap.status === "connected") showAdminModal("tun"); } catch (error) { toast(errText(error)); }
   };
   $("#btn-ping").onclick = measureLatency;
+  $("#map-zoom-in").onclick = () => zoomMap(1.25);
+  $("#map-zoom-out").onclick = () => zoomMap(0.8);
+  $("#map-reset").onclick = resetMapView;
+  $("#map-retry").onclick = () => loadServers(true);
+  $("#map-overlay-retry").onclick = () => loadServers(true);
   $("#server-search").oninput = renderServers;
-  $("#server-list").onclick = async (event) => {
-    const expand = event.target.closest("[data-expand]");
-    if (expand) { event.stopPropagation(); openCountry = openCountry === expand.dataset.expand ? null : expand.dataset.expand; renderServers(); return; }
-    const item = event.target.closest("[data-country]");
-    if (!item) return;
-    try { await api().SetLocation(item.dataset.country === "REC" ? "" : item.dataset.country, item.dataset.city || ""); await refreshSnapshot(); navigate("home"); } catch (error) { toast(errText(error)); }
+  $("#server-list").onclick = (event) => {
+    if (event.target.closest("[data-map-retry]")) { loadServers(true); return; }
+    const country = event.target.closest("[data-map-country]");
+    if (country) selectMapCountry(country.dataset.mapCountry);
   };
+  $("#map-detail").onclick = (event) => {
+    const city = event.target.closest("[data-map-city]");
+    if (city) { selectMapCity(city.dataset.mapCity); return; }
+    const use = event.target.closest("[data-map-use-location]");
+    if (use) useMapLocation(use);
+  };
+  for (const button of $$('[data-map-locale]')) {
+    button.onclick = () => setLocale(button.dataset.mapLocale);
+  }
+  renderMapLocale();
+  wireMapInteractions();
 
   const settingIds = ["#set-bypass-ir", "#set-bypass-lan", "#set-autoconnect", "#set-autoswitch", "#set-killswitch", "#set-tls-split", "#set-port"];
   for (const id of settingIds) $(id).onchange = saveSettings;

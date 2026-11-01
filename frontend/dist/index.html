@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" dir="ltr">
+<html lang="fa" dir="rtl">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
@@ -11,6 +11,7 @@
   <div class="app-backdrop" aria-hidden="true">
     <div class="backdrop-image"></div>
     <div class="backdrop-atmosphere"></div>
+    <div class="backdrop-olympus"></div>
     <div class="backdrop-shade"></div>
     <div class="backdrop-light"></div>
     <div class="backdrop-grain"></div>
@@ -123,7 +124,8 @@
               <div class="command-wrap">
                 <div class="command-halo"></div>
                 <button class="connection-command" id="orb" data-status="disconnected" type="button" aria-label="Connect" aria-describedby="status-text status-sub">
-                  <span class="command-frame"></span><span class="command-mark"><span class="helios-sun" aria-hidden="true"><span class="helios-rays"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="helios-disk"></span><svg class="helios-inscription" viewBox="0 0 160 160" aria-hidden="true"><defs><path id="helios-inscription-path" d="M 80,80 m -58,0 a 58,58 0 1,1 116,0 a 58,58 0 1,1 -116,0"></path></defs><text><textPath href="#helios-inscription-path" startOffset="0%">ΖΕΥΣ · ΦΩΣ · ΙΣΧΥΣ · ΑΣΦΑΛΕΙΑ · </textPath></text></svg></span><img class="command-emblem" src="zeus-connection-emblem.png" alt=""></span><span class="command-label" id="command-label" data-i18n="connect">Connect</span>
+                  <span class="solar-month-ring" id="solar-month-ring" role="img" aria-label="ماه‌های تقویم فارسی"><span class="solar-month" style="--angle:0deg;--counter-angle:0deg"><b>فروردین</b></span><span class="solar-month" style="--angle:30deg;--counter-angle:-30deg"><b>اردیبهشت</b></span><span class="solar-month" style="--angle:60deg;--counter-angle:-60deg"><b>خرداد</b></span><span class="solar-month" style="--angle:90deg;--counter-angle:-90deg"><b>تیر</b></span><span class="solar-month" style="--angle:120deg;--counter-angle:-120deg"><b>مرداد</b></span><span class="solar-month" style="--angle:150deg;--counter-angle:-150deg"><b>شهریور</b></span><span class="solar-month" style="--angle:180deg;--counter-angle:-180deg"><b>مهر</b></span><span class="solar-month" style="--angle:210deg;--counter-angle:-210deg"><b>آبان</b></span><span class="solar-month" style="--angle:240deg;--counter-angle:-240deg"><b>آذر</b></span><span class="solar-month" style="--angle:270deg;--counter-angle:-270deg"><b>دی</b></span><span class="solar-month" style="--angle:300deg;--counter-angle:-300deg"><b>بهمن</b></span><span class="solar-month" style="--angle:330deg;--counter-angle:-330deg"><b>اسفند</b></span></span>
+                  <span class="command-frame"></span><span class="command-mark"><span class="helios-sun" aria-hidden="true"><span class="helios-rays"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="helios-disk"></span><svg class="helios-inscription" viewBox="0 0 160 160" aria-hidden="true"><defs><path id="helios-inscription-path" d="M 80,80 m -58,0 a 58,58 0 1,1 116,0 a 58,58 0 1,1 -116,0"></path></defs><text><textPath href="#helios-inscription-path" startOffset="0%">ΖΕΥΣ · ΦΩΣ · ΙΣΧΥΣ · ΑΣΦΑΛΕΙΑ · </textPath></text></svg></span><svg class="command-bolt" viewBox="0 0 64 88" aria-hidden="true"><path d="M38 2 9 49h20l-7 37 33-53H34L38 2Z"></path></svg></span><span class="command-label" id="command-label" data-i18n="connect">Connect</span>
                 </button>
               </div>
               <div class="connection-copy" role="status" aria-live="polite" aria-atomic="true"><h2 id="status-text" data-i18n="stateDisconnected">Not connected</h2><p id="status-sub" data-i18n="tapToConnect">Choose a location, then establish protection.</p><span class="session-clock" id="session-clock"></span></div>

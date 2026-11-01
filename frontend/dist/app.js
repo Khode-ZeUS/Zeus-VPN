@@ -37,10 +37,11 @@ const translations = {
   },
 };
 
-let locale = "en";
+let locale = "fa";
 let effectsEnabled = true;
 try {
-  locale = localStorage.getItem("zeus.locale") === "fa" ? "fa" : "en";
+  const savedLocale = localStorage.getItem("zeus.locale");
+  locale = savedLocale === "en" ? "en" : "fa";
   effectsEnabled = localStorage.getItem("zeus.effects") !== "off";
 } catch (e) {}
 
@@ -728,6 +729,16 @@ function askConfirm(message, title = t("confirmation")) {
   return new Promise((resolve) => { confirmResolve = resolve; });
 }
 
+const PERSIAN_MONTHS = ["فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"];
+const ENGLISH_MONTHS = ["Farvardin", "Ordibehesht", "Khordad", "Tir", "Mordad", "Shahrivar", "Mehr", "Aban", "Azar", "Dey", "Bahman", "Esfand"];
+function renderSolarMonthRing() {
+  const ring = $("#solar-month-ring");
+  if (!ring) return;
+  const months = locale === "fa" ? PERSIAN_MONTHS : ENGLISH_MONTHS;
+  Array.from(ring.querySelectorAll(".solar-month b")).forEach((el, index) => { el.textContent = months[index]; });
+  ring.setAttribute("aria-label", locale === "fa" ? `ماه‌های تقویم فارسی: ${PERSIAN_MONTHS.join("، ")}` : `Persian calendar months: ${ENGLISH_MONTHS.join(", ")}`);
+}
+
 function applyLocale() {
   document.documentElement.lang = locale === "fa" ? "fa" : "en";
   document.documentElement.dir = locale === "fa" ? "rtl" : "ltr";
@@ -742,6 +753,7 @@ function applyLocale() {
   }
   if ($("#set-language")) $("#set-language").value = locale;
   if ($("#set-effects")) $("#set-effects").checked = effectsEnabled;
+  renderSolarMonthRing();
   renderMapLocale();
   updateBreadcrumb();
 }

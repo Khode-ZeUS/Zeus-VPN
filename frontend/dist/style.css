@@ -1147,3 +1147,150 @@ body.effects-off *, body.effects-off *::before, body.effects-off *::after { anim
   .server-map-screen { min-height: calc(100vh - 122px); overflow: visible; }
   .server-map-screen .map-layout { min-height: 0; }
 }
+
+/* Solar command wheel — local vector treatment around the connection action. */
+.backdrop-olympus {
+  position: absolute;
+  z-index: 1;
+  inset: -4%;
+  background: url("zeus-olympus-atmosphere.png") 54% center / cover no-repeat;
+  opacity: .08;
+  mix-blend-mode: screen;
+  filter: saturate(.82) contrast(1.08) brightness(.9);
+  transform: scale(1.02);
+  animation: olympus-drift 32s ease-in-out infinite alternate;
+}
+.backdrop-shade { z-index: 2; }
+.backdrop-light { z-index: 3; }
+.backdrop-grain { z-index: 4; }
+body.connected .backdrop-olympus {
+  opacity: .28;
+  filter: saturate(1.02) contrast(1.1) brightness(1.04);
+  animation-duration: 17s;
+}
+@keyframes olympus-drift {
+  from { transform: scale(1.02) translate3d(-.5%, 0, 0); }
+  to { transform: scale(1.08) translate3d(.7%, -1%, 0); }
+}
+
+.connection-command { overflow: visible; }
+.solar-month-ring {
+  --ring-size: min(300px, calc(100vw - 56px));
+  --ring-radius: min(124px, 39vw);
+  position: absolute;
+  z-index: 0;
+  top: 50%;
+  left: 50%;
+  width: var(--ring-size);
+  height: var(--ring-size);
+  border: 1px solid rgba(198, 166, 107, .34);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  opacity: .82;
+  box-shadow: 0 0 0 7px rgba(198, 166, 107, .035), inset 0 0 24px rgba(198, 166, 107, .035);
+  transition: border-color .6s ease, box-shadow .6s ease, opacity .6s ease;
+}
+.solar-month-ring::before,
+.solar-month-ring::after {
+  content: "";
+  position: absolute;
+  inset: 9px;
+  border: 1px dashed rgba(233, 224, 206, .15);
+  border-radius: 50%;
+}
+.solar-month-ring::after {
+  inset: 18px;
+  border-style: solid;
+  border-color: rgba(198, 166, 107, .12);
+  border-left-color: transparent;
+  border-bottom-color: transparent;
+  transform: rotate(28deg);
+}
+.solar-month {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max-content;
+  color: rgba(233, 224, 206, .72);
+  font-size: clamp(8px, 1.6vw, 11px);
+  font-weight: 650;
+  letter-spacing: .01em;
+  line-height: 1;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, .48);
+  transform: rotate(var(--angle)) translate(-50%, calc(var(--ring-radius) * -1));
+  transform-origin: 50% 50%;
+  transition: color .5s ease, text-shadow .5s ease;
+}
+.solar-month b {
+  display: block;
+  font-weight: inherit;
+  transform: rotate(var(--counter-angle));
+  white-space: nowrap;
+}
+.solar-month-ring + .command-frame { z-index: 1; }
+.connection-command[data-status="connected"] .solar-month-ring {
+  border-color: rgba(168, 199, 183, .68);
+  box-shadow: 0 0 0 7px rgba(66, 109, 92, .08), 0 0 34px rgba(66, 109, 92, .16), inset 0 0 30px rgba(66, 109, 92, .08);
+  animation: solar-month-orbit 28s linear infinite;
+}
+.connection-command[data-status="connected"] .solar-month {
+  color: rgba(210, 232, 219, .9);
+  text-shadow: 0 0 12px rgba(168, 199, 183, .38), 0 1px 12px rgba(0, 0, 0, .5);
+}
+@keyframes solar-month-orbit { to { transform: translate(-50%, -50%) rotate(360deg); } }
+
+/* The lightning is a small inline vector, not the former circular emblem. */
+.command-bolt {
+  position: relative;
+  z-index: 4;
+  width: 48px;
+  height: 66px;
+  color: var(--gold-light);
+  fill: currentColor;
+  stroke: none;
+  opacity: .9;
+  filter: drop-shadow(0 5px 11px rgba(198, 166, 107, .22));
+  transition: color .5s ease, filter .5s ease, opacity .5s ease;
+}
+.command-bolt path { fill: currentColor; stroke: none; }
+.connection-command[data-status="connected"] .command-bolt {
+  color: #d5f4df;
+  opacity: 1;
+  filter: drop-shadow(0 0 6px rgba(168, 235, 193, .95)) drop-shadow(0 0 22px rgba(66, 180, 112, .72));
+  animation: bolt-illumination 1.8s ease-in-out infinite;
+}
+.connection-command[data-status="connecting"] .command-bolt,
+.connection-command[data-status="reconnecting"] .command-bolt {
+  animation: bolt-arming 1.15s ease-in-out infinite;
+}
+@keyframes bolt-illumination {
+  0%, 100% { transform: scale(.96); opacity: .78; }
+  45% { transform: scale(1.08); opacity: 1; }
+  52% { transform: scale(1.02); opacity: .9; }
+}
+@keyframes bolt-arming {
+  0%, 100% { transform: scale(.9); opacity: .48; }
+  55% { transform: scale(1.04); opacity: 1; }
+}
+
+@media (min-width: 760px) {
+  .solar-month-ring {
+    --ring-size: min(324px, calc(100vw - 300px));
+    --ring-radius: 142px;
+  }
+}
+@media (max-width: 380px) {
+  .solar-month-ring {
+    --ring-size: min(248px, calc(100vw - 38px));
+    --ring-radius: min(108px, 36vw);
+  }
+  .solar-month { font-size: 8px; }
+  .command-bolt { width: 43px; height: 60px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop-olympus,
+  .connection-command[data-status="connected"] .solar-month-ring,
+  .connection-command[data-status="connected"] .command-bolt { animation: none !important; }
+}

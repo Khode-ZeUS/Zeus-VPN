@@ -285,3 +285,254 @@ body.effects-off *, body.effects-off *::before, body.effects-off *::after { anim
   .command-mark { width: 86px; height: 86px; transform: translateY(-7px); }
   .command-label { bottom: 20px; }
 }
+
+/* Phase D — Helios state system and observatory instruments */
+.command-mark {
+  isolation: isolate;
+}
+.helios-sun {
+  position: absolute;
+  z-index: 0;
+  inset: 50% auto auto 50%;
+  width: 146px;
+  height: 146px;
+  display: grid;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  color: var(--gold);
+  opacity: .72;
+  transition: opacity .6s ease, color .6s ease, filter .6s ease;
+}
+.helios-disk {
+  position: absolute;
+  inset: 27px;
+  border: 1px solid rgba(198, 166, 107, .35);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(198, 166, 107, .15), rgba(8, 13, 24, .03) 63%, transparent 70%);
+  box-shadow: inset 0 0 22px rgba(198, 166, 107, .09), 0 0 24px rgba(198, 166, 107, .07);
+}
+.helios-disk::before,
+.helios-disk::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border: 1px solid rgba(233, 224, 206, .12);
+  border-radius: 50%;
+}
+.helios-disk::after {
+  inset: 18px;
+  border-color: rgba(198, 166, 107, .16);
+}
+.helios-rays {
+  position: absolute;
+  inset: 0;
+  animation: helios-dormant 28s linear infinite;
+}
+.helios-rays i {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1px;
+  height: 68px;
+  transform-origin: 50% 0;
+  background: linear-gradient(to bottom, rgba(225, 201, 143, .7), rgba(198, 166, 107, 0));
+  opacity: .42;
+}
+.helios-rays i:nth-child(1) { transform: translate(-50%, 0) rotate(0deg); }
+.helios-rays i:nth-child(2) { transform: translate(-50%, 0) rotate(22.5deg); }
+.helios-rays i:nth-child(3) { transform: translate(-50%, 0) rotate(45deg); }
+.helios-rays i:nth-child(4) { transform: translate(-50%, 0) rotate(67.5deg); }
+.helios-rays i:nth-child(5) { transform: translate(-50%, 0) rotate(90deg); }
+.helios-rays i:nth-child(6) { transform: translate(-50%, 0) rotate(112.5deg); }
+.helios-rays i:nth-child(7) { transform: translate(-50%, 0) rotate(135deg); }
+.helios-rays i:nth-child(8) { transform: translate(-50%, 0) rotate(157.5deg); }
+.helios-rays i:nth-child(9) { transform: translate(-50%, 0) rotate(180deg); }
+.helios-rays i:nth-child(10) { transform: translate(-50%, 0) rotate(202.5deg); }
+.helios-rays i:nth-child(11) { transform: translate(-50%, 0) rotate(225deg); }
+.helios-rays i:nth-child(12) { transform: translate(-50%, 0) rotate(247.5deg); }
+.helios-rays i:nth-child(13) { transform: translate(-50%, 0) rotate(270deg); }
+.helios-rays i:nth-child(14) { transform: translate(-50%, 0) rotate(292.5deg); }
+.helios-rays i:nth-child(15) { transform: translate(-50%, 0) rotate(315deg); }
+.helios-rays i:nth-child(16) { transform: translate(-50%, 0) rotate(337.5deg); }
+.helios-inscription {
+  position: absolute;
+  z-index: 1;
+  inset: 12px;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  color: var(--gold-light);
+  fill: none;
+  stroke: none;
+  opacity: .52;
+  font-family: Georgia, serif;
+  font-size: 7px;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
+}
+.helios-inscription text { fill: currentColor; }
+.command-emblem {
+  position: relative;
+  z-index: 2;
+}
+.connection-command[data-status="disconnected"] .helios-sun {
+  opacity: .38;
+  filter: saturate(.55);
+}
+.connection-command[data-status="disconnected"] .helios-rays {
+  animation-duration: 46s;
+}
+.connection-command[data-status="connecting"] .helios-sun,
+.connection-command[data-status="disconnecting"] .helios-sun {
+  opacity: .82;
+  filter: saturate(1.05);
+}
+.connection-command[data-status="connecting"] .helios-rays {
+  animation: helios-ignite 2.8s ease-in-out infinite;
+}
+.connection-command[data-status="connecting"] .helios-disk {
+  animation: helios-disk-pulse 1.45s ease-in-out infinite;
+}
+.connection-command[data-status="disconnecting"] .helios-rays {
+  animation: helios-release 2.2s ease-in-out infinite;
+}
+.connection-command[data-status="disconnecting"] .helios-disk {
+  animation: helios-dim 1.8s ease-in-out infinite;
+}
+.connection-command[data-status="connected"] .helios-sun {
+  color: var(--success);
+  opacity: .9;
+  filter: saturate(1.08);
+}
+.connection-command[data-status="connected"] .helios-rays {
+  animation: helios-steadfast 34s linear infinite;
+}
+.connection-command[data-status="connected"] .helios-rays i {
+  background: linear-gradient(to bottom, rgba(168, 199, 183, .72), rgba(66, 109, 92, 0));
+  opacity: .52;
+}
+.connection-command[data-status="connected"] .helios-disk {
+  border-color: rgba(168, 199, 183, .46);
+  background: radial-gradient(circle, rgba(66, 109, 92, .2), rgba(8, 13, 24, .03) 63%, transparent 70%);
+  box-shadow: inset 0 0 22px rgba(66, 109, 92, .14), 0 0 28px rgba(66, 109, 92, .16);
+}
+.connection-command[data-status="connected"] .helios-inscription { color: var(--success); opacity: .58; }
+.connection-command[data-status="reconnecting"] .helios-sun {
+  color: var(--warning);
+  opacity: .84;
+}
+.connection-command[data-status="reconnecting"] .helios-rays {
+  animation: helios-reconnect 1.4s steps(2, end) infinite;
+}
+.connection-command[data-status="reconnecting"] .helios-disk {
+  animation: helios-reconnect-disk 1.4s ease-in-out infinite;
+}
+.connection-command[data-status="error"] .helios-sun {
+  color: var(--danger);
+  opacity: .74;
+  filter: saturate(.9);
+}
+.connection-command[data-status="error"] .helios-rays {
+  animation: helios-error 1.8s ease-in-out infinite;
+}
+.connection-command[data-status="error"] .helios-rays i { background: linear-gradient(to bottom, rgba(212, 147, 141, .72), rgba(184, 111, 107, 0)); }
+.connection-command[data-status="error"] .helios-disk { border-color: rgba(212, 147, 141, .42); }
+
+@keyframes helios-dormant { to { transform: rotate(360deg); } }
+@keyframes helios-ignite { 0%, 100% { transform: rotate(0deg) scale(.94); opacity: .45; } 50% { transform: rotate(180deg) scale(1.04); opacity: 1; } }
+@keyframes helios-release { 0%, 100% { transform: rotate(0deg) scale(1); opacity: .9; } 50% { transform: rotate(-150deg) scale(.92); opacity: .46; } }
+@keyframes helios-steadfast { to { transform: rotate(360deg); } }
+@keyframes helios-reconnect { 0%, 100% { transform: rotate(0deg); opacity: .38; } 50% { transform: rotate(180deg); opacity: 1; } }
+@keyframes helios-reconnect-disk { 0%, 100% { transform: scale(.94); opacity: .58; } 50% { transform: scale(1.06); opacity: 1; } }
+@keyframes helios-error { 0%, 100% { transform: rotate(0deg) scale(.98); opacity: .45; } 50% { transform: rotate(90deg) scale(1.03); opacity: .9; } }
+@keyframes helios-disk-pulse { 0%, 100% { transform: scale(.94); } 50% { transform: scale(1.06); } }
+@keyframes helios-dim { 0%, 100% { opacity: .9; } 50% { opacity: .42; } }
+
+/* The Observatory reads as an instrument bank, while each value remains a
+   direct rendering of the current snapshot rather than an invented history. */
+.observatory-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 18px;
+}
+.observatory-metric {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 10px;
+  border: 1px solid rgba(233, 224, 206, .1);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(233, 224, 206, .045), rgba(8, 13, 24, .25));
+}
+.observatory-metric-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  border: 1px solid rgba(198, 166, 107, .23);
+  border-radius: 8px;
+  color: var(--gold-light);
+  background: rgba(198, 166, 107, .1);
+}
+.observatory-metric-icon svg { width: 16px; height: 16px; stroke-width: 1.6; }
+.observatory-metric.download .observatory-metric-icon { border-color: rgba(168, 199, 183, .3); color: var(--success); background: rgba(66, 109, 92, .16); }
+.observatory-metric.upload .observatory-metric-icon { color: var(--gold-light); }
+.observatory-metric.duration .observatory-metric-icon { color: var(--ivory); background: rgba(57, 77, 104, .28); }
+.observatory-metric span:last-child { min-width: 0; }
+.observatory-metric small { display: block; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.observatory-metric strong { display: block; margin-top: 3px; overflow: hidden; color: var(--ivory); font: 650 12px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+.observatory-metric.duration strong { color: var(--gold-light); }
+.observatory-core .chart-wrap { margin-top: 2px; }
+.observatory-core .chart-legend { justify-content: space-between; }
+.destination-panel,
+.activity-card,
+.settings-section,
+.settings-aside-card,
+.stat-panel,
+.limitation-panel {
+  position: relative;
+  overflow: hidden;
+}
+.destination-panel::before,
+.activity-card::before,
+.settings-section::before,
+.settings-aside-card::before,
+.stat-panel::before,
+.limitation-panel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  inset-inline-start: 18px;
+  width: 46px;
+  height: 1px;
+  background: var(--gold);
+  opacity: .6;
+}
+.destination-panel > *,
+.activity-card > *,
+.settings-section > *,
+.settings-aside-card > *,
+.stat-panel > *,
+.limitation-panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+@media (max-width: 600px) {
+  .helios-sun { width: 130px; height: 130px; }
+  .observatory-metrics { grid-template-columns: 1fr; }
+  .observatory-metric { min-height: 52px; }
+}
+@media (min-width: 760px) {
+  .helios-sun { width: 164px; height: 164px; }
+  .observatory-metrics { gap: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .helios-rays,
+  .helios-disk,
+  .connection-command[data-status] .command-emblem { animation: none !important; }
+}

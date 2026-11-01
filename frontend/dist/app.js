@@ -13,8 +13,8 @@ const translations = {
     commandCenterEyebrow: "COMMAND CENTER", commandCenterTitle: "Your protection, at a glance.", commandCenterLead: "A clear view of the connection that protects your digital life.", connectionState: "CONNECTION STATE", connect: "Connect", disconnect: "Disconnect", stateDisconnected: "Disconnected", stateConnecting: "Connecting", stateConnected: "Connected", stateDisconnecting: "Disconnecting", stateReconnecting: "Reconnecting", tapToConnect: "Choose a location, then establish protection.", securingConnection: "Securing your connection", protectedNow: "Your traffic is protected", disconnecting: "Closing the secure route", reconnecting: "Connection lost, retrying", actualStateOnly: "Actual network state only",
     protectedRoute: "PROTECTED ROUTE", selectedLocation: "Selected location", change: "Change", connectionMode: "Connection mode", systemProxy: "System Proxy", fullVpn: "Full VPN", exitIp: "Exit IP", accountQuota: "ACCOUNT QUOTA", monthlyData: "Monthly data", remaining: "Remaining", allAccounts: "All accounts", liveTraffic: "LIVE TRAFFIC", currentSession: "Current session", openObservatory: "Open observatory", download: "Download", upload: "Upload", sessionTotal: "Session total", liveOneSecond: "Live · one-second samples", protectionMode: "PROTECTION MODE", chooseTrafficRoute: "Choose how traffic leaves this device.",
     locationsEyebrow: "NETWORK ATLAS", locationsTitle: "Choose your location.", locationsLead: "Select a real server route. Latency is measured only when requested.", measureLatency: "Measure latency", searchLocations: "Search countries or cities", serverDataActual: "Server data from the application", loadingServers: "Loading servers…", couldNotLoadServers: "Could not load servers.", noMatches: "No matches", fastestAvailable: "Fastest available server", cities: "cities", city: "city", timeout: "timeout",
-    statisticsEyebrow: "NETWORK OBSERVATORY", statisticsTitle: "See what ZEUS is carrying.", statisticsLead: "Live, current-session measurements from the existing tunnel.", liveSession: "LIVE SESSION", sessionTraffic: "SESSION TRAFFIC", notConnected: "No active session", oneSecondSamples: "1s samples", combinedTraffic: "Combined traffic", chartAwaiting: "Live samples will appear when the tunnel is active.", downloadRate: "Download rate", uploadRate: "Upload rate", sessionDuration: "Session duration", quotaRemaining: "Quota remaining", historyBoundary: "HISTORY BOUNDARY", historyUnavailable: "Historical time series unavailable", historyUnavailableDetail: "This version exposes live session samples and recorded destinations, not daily, weekly or monthly buckets.", recordedDestinations: "RECORDED DESTINATIONS", whereTrafficWent: "Where recorded traffic went.", retainedUsage: "Retained usage data", destinationNote: "Cumulative destination totals with last activity, not a time-series history.", windowsApplications: "WINDOWS APPLICATIONS", applicationTraffic: "Application traffic", windowsOnly: "Windows only",
-    activityEyebrow: "ACTIVITY LEDGER", activityTitle: "A factual record of the application.", activityLead: "Logs, notices and retained destination usage — without invented history.", copyLogs: "Copy logs", applicationLogs: "APPLICATION LOGS", diagnosticRecord: "Diagnostic record", openLogFile: "Open log file", logsEmpty: "Open logs to load the current diagnostic record.", destinationUsage: "Destination usage", searchDestinations: "Search destinations", total: "Total", clearHistory: "Clear history", usageUnavailable: "Usage data unavailable", usageUnavailableDetail: "The application could not read retained destination usage.", retryUsage: "Retry usage", logsUnavailable: "Logs unavailable", logsUnavailableDetail: "The application could not read its diagnostic record.", retryLogs: "Retry logs",
+    statisticsEyebrow: "NETWORK OBSERVATORY", statisticsTitle: "See what ZEUS is carrying.", statisticsLead: "Live, current-session measurements from the existing tunnel.", networkAnalytics: "NETWORK ANALYTICS", analyticsTitle: "A single view of your network activity.", analyticsLead: "Recorded destinations and live tunnel measurements, kept separate and factual.", overview: "OVERVIEW", totalUploaded: "Total uploaded", totalDownloaded: "Total downloaded", totalTraffic: "Total traffic", destinationIPs: "Destination IPs", destinationCountries: "Destination countries", activeSession: "Active session", recordedUsage: "Recorded usage", detectedRecords: "Detected in recorded hosts", countryMetadataUnavailable: "Metadata unavailable", countryMetadataDetail: "The usage API records destinations, but does not provide reliable country enrichment.", trafficDistribution: "TRAFFIC DISTRIBUTION", uploadDownloadMix: "Upload versus download", destinationDistribution: "DESTINATION DISTRIBUTION", relativeDestinationShare: "Relative traffic share by destination", topDestinations: "Top recorded destinations", countryDistribution: "COUNTRY DISTRIBUTION", dataBoundary: "Data boundary", ipObservatory: "IP ADDRESS OBSERVATORY", destinationRecords: "Recorded destination records", hostRecordsOnly: "Hosts and IPs from the usage ledger", searchIpHostname: "Search IP or hostname", sortBy: "Sort by", sortTraffic: "Traffic volume", sortDestination: "Destination", sortIp: "IP address", sortCountryUnavailable: "Country (not available)", destination: "Destination", ipAddress: "IP address", country: "Country", traffic: "Traffic", breakdown: "Breakdown", relativeShare: "share", ipTag: "IP", hostTag: "HOST", liveSession: "LIVE SESSION", sessionTraffic: "SESSION TRAFFIC", notConnected: "No active session", oneSecondSamples: "1s samples", combinedTraffic: "Combined traffic", chartAwaiting: "Live samples will appear when the tunnel is active.", downloadRate: "Download rate", uploadRate: "Upload rate", sessionDuration: "Session duration", quotaRemaining: "Quota remaining", historyBoundary: "HISTORY BOUNDARY", historyUnavailable: "Historical time series unavailable", historyUnavailableDetail: "This version exposes live session samples and recorded destinations, not daily, weekly or monthly buckets.", recordedDestinations: "RECORDED DESTINATIONS", whereTrafficWent: "Where recorded traffic went.", retainedUsage: "Retained usage data", destinationNote: "Cumulative destination totals with last activity, not a time-series history.", windowsApplications: "WINDOWS APPLICATIONS", applicationTraffic: "Application traffic", windowsOnly: "Windows only",
+    activityEyebrow: "ACTIVITY LEDGER", activityTitle: "A factual record of the application.", activityLead: "Logs and notices from the application — without invented history.", copyLogs: "Copy logs", applicationLogs: "APPLICATION LOGS", diagnosticRecord: "Diagnostic record", openLogFile: "Open log file", logsEmpty: "Open logs to load the current diagnostic record.", destinationUsage: "Destination usage", searchDestinations: "Search destinations", total: "Total", clearHistory: "Clear history", usageUnavailable: "Usage data unavailable", usageUnavailableDetail: "The application could not read retained destination usage.", retryUsage: "Retry usage", logsUnavailable: "Logs unavailable", logsUnavailableDetail: "The application could not read its diagnostic record.", retryLogs: "Retry logs",
     settingsEyebrow: "CONTROL ROOM", settingsTitle: "Shape the way ZEUS protects you.", settingsLead: "Connection, routing, startup and appearance preferences.", accounts: "ACCOUNTS", accountsTitle: "Mozilla accounts", addAccount: "Add another account", connection: "CONNECTION", connectionSettings: "Connection behavior", autoConnect: "Connect on launch", autoConnectDetail: "Reconnect automatically when ZEUS starts.", autoSwitch: "Auto-switch accounts", autoSwitchDetail: "Use the next account when one runs out of data.", startAtLogin: "Start at login", startWithWindows: "Start with Windows", openAtLogin: "Open at login", autostartDetail: "Launch ZEUS automatically when you sign in.", killSwitch: "Kill switch", killSwitchDetail: "Block traffic if the VPN drops until it reconnects or you disconnect.", routing: "ROUTING", routingSettings: "Traffic boundaries", bypassIran: "Bypass Iranian sites", bypassIranDetail: ".ir domains connect directly.", bypassLan: "Bypass local network", bypassLanDetail: "Printers, routers and LAN stay direct.", bypassLanUnsupported: "Android 13 or newer is required for route-level LAN bypass.", fullVpnApps: "FULL VPN APPS", allApps: "All apps", selectedOnly: "Selected only", exceptSelected: "Except selected", chooseApps: "Choose apps", searchApps: "Search apps", antiFiltering: "ANTI-FILTERING", antiFilteringSettings: "Transport detail", tlsFragmentation: "TLS fragmentation", tlsFragmentationDetail: "Hides server names from SNI filtering.", tlsAuto: "Auto", tlsAlways: "Always (SNI)", tlsFirstByte: "First byte", tlsOff: "Off", localProxyPort: "Local proxy port", localProxyPortDetail: "HTTP + SOCKS5 for other apps.", appearance: "APPEARANCE", appearanceTitle: "A quieter command center.", language: "Language", languageDetail: "Choose the interface direction.", english: "English", persian: "فارسی", visualEffects: "Atmospheric effects", visualEffectsDetail: "Reduce movement and decorative lighting.", troubleshooting: "TROUBLESHOOTING", diagnosticsTitle: "Diagnostics", viewLogs: "View logs", openStatistics: "Open statistics",
     confirmation: "CONFIRMATION", confirm: "Confirm", elevatedAccess: "ELEVATED ACCESS", administratorNeeded: "Administrator needed", restartAsAdmin: "Restart as administrator", useSystemProxy: "Use System Proxy instead",
     checkingData: "Checking data…", outOfData: "Out of data", signInExpired: "Sign-in expired · remove and add it again", active: "Active", use: "Use", noApps: "No apps found", noUsage: "No data usage recorded yet.", noUsageDetail: "Connect and use apps — their usage appears here.", noActiveSession: "No active session", recordedNoData: "No destinations recorded yet.", lastActive: "Last active", noLogs: "No log lines available.", logsCopied: "Logs copied", usageCleared: "Usage history cleared", nowUsing: "Now using", openAppSettings: "Open Settings", adminTun: "Full VPN mode creates a virtual network adapter so every app is protected. Windows requires administrator permission for that.", adminKill: "The kill switch uses the Windows firewall to block traffic when the VPN drops. Windows requires administrator permission for that.",
@@ -28,8 +28,8 @@ const translations = {
     commandCenterEyebrow: "مرکز فرماندهی", commandCenterTitle: "حفاظت شما، در یک نگاه.", commandCenterLead: "نمایی روشن از ارتباطی که از زندگی دیجیتال شما محافظت می‌کند.", connectionState: "وضعیت اتصال", connect: "اتصال", disconnect: "قطع اتصال", stateDisconnected: "متصل نیست", stateConnecting: "در حال اتصال", stateConnected: "متصل", stateDisconnecting: "در حال قطع اتصال", stateReconnecting: "در حال اتصال دوباره", tapToConnect: "موقعیت را انتخاب کنید و حفاظت را فعال کنید.", securingConnection: "در حال ایمن‌سازی اتصال", protectedNow: "ترافیک شما محافظت می‌شود", disconnecting: "در حال بستن مسیر امن", reconnecting: "اتصال از دست رفت؛ تلاش دوباره", actualStateOnly: "فقط وضعیت واقعی شبکه",
     protectedRoute: "مسیر محافظت‌شده", selectedLocation: "موقعیت انتخاب‌شده", change: "تغییر", connectionMode: "حالت اتصال", systemProxy: "پروکسی سیستم", fullVpn: "VPN کامل", exitIp: "IP خروجی", accountQuota: "سهمیه حساب", monthlyData: "داده ماهانه", remaining: "باقی‌مانده", allAccounts: "همه حساب‌ها", liveTraffic: "ترافیک زنده", currentSession: "نشست فعلی", openObservatory: "باز کردن رصدخانه", download: "دریافت", upload: "ارسال", sessionTotal: "مجموع نشست", liveOneSecond: "زنده · نمونه‌های یک‌ثانیه‌ای", protectionMode: "حالت حفاظت", chooseTrafficRoute: "نحوه خروج ترافیک از این دستگاه را انتخاب کنید.",
     locationsEyebrow: "اطلس شبکه", locationsTitle: "موقعیت خود را انتخاب کنید.", locationsLead: "یک مسیر واقعی سرور را انتخاب کنید. تأخیر فقط در صورت درخواست اندازه‌گیری می‌شود.", measureLatency: "اندازه‌گیری تأخیر", searchLocations: "جست‌وجوی کشور یا شهر", serverDataActual: "اطلاعات سرور از برنامه", loadingServers: "در حال بارگذاری سرورها…", couldNotLoadServers: "بارگذاری سرورها ممکن نشد.", noMatches: "موردی پیدا نشد", fastestAvailable: "سریع‌ترین سرور موجود", cities: "شهر", city: "شهر", timeout: "پایان زمان",
-    statisticsEyebrow: "رصدخانه شبکه", statisticsTitle: "ببینید زئوس چه چیزی را حمل می‌کند.", statisticsLead: "اندازه‌گیری زنده نشست فعلی از تونل موجود.", liveSession: "نشست زنده", sessionTraffic: "ترافیک نشست", notConnected: "نشست فعالی وجود ندارد", oneSecondSamples: "نمونه‌های ۱ ثانیه‌ای", combinedTraffic: "ترافیک ترکیبی", chartAwaiting: "نمونه‌های زنده هنگام فعال بودن تونل نمایش داده می‌شوند.", downloadRate: "سرعت دریافت", uploadRate: "سرعت ارسال", sessionDuration: "مدت نشست", quotaRemaining: "سهمیه باقی‌مانده", historyBoundary: "مرز تاریخچه", historyUnavailable: "سری زمانی تاریخی در دسترس نیست", historyUnavailableDetail: "این نسخه نمونه‌های زنده نشست و مقصدهای ثبت‌شده را دارد، نه داده‌های روزانه، هفتگی یا ماهانه.", recordedDestinations: "مقصدهای ثبت‌شده", whereTrafficWent: "ترافیک ثبت‌شده به کجا رفته است.", retainedUsage: "داده مصرف نگه‌داری‌شده", destinationNote: "مجموع تجمعی مقصدها با آخرین فعالیت؛ نه تاریخچه سری زمانی.", windowsApplications: "برنامه‌های ویندوز", applicationTraffic: "ترافیک برنامه‌ها", windowsOnly: "فقط ویندوز",
-    activityEyebrow: "دفتر فعالیت", activityTitle: "گزارش واقعی برنامه.", activityLead: "لاگ‌ها، اعلان‌ها و مصرف مقصدهای ثبت‌شده — بدون تاریخچه ساختگی.", copyLogs: "کپی لاگ‌ها", applicationLogs: "لاگ‌های برنامه", diagnosticRecord: "گزارش عیب‌یابی", openLogFile: "باز کردن فایل لاگ", logsEmpty: "برای بارگذاری گزارش فعلی، لاگ‌ها را باز کنید.", destinationUsage: "مصرف مقصدها", searchDestinations: "جست‌وجوی مقصدها", total: "مجموع", clearHistory: "پاک‌کردن تاریخچه", usageUnavailable: "داده مصرف در دسترس نیست", usageUnavailableDetail: "برنامه نتوانست مصرف مقصدهای نگه‌داری‌شده را بخواند.", retryUsage: "تلاش دوباره برای مصرف", logsUnavailable: "لاگ‌ها در دسترس نیستند", logsUnavailableDetail: "برنامه نتوانست گزارش عیب‌یابی را بخواند.", retryLogs: "تلاش دوباره برای لاگ‌ها",
+    statisticsEyebrow: "رصدخانه شبکه", statisticsTitle: "ببینید زئوس چه چیزی را حمل می‌کند.", statisticsLead: "اندازه‌گیری زنده نشست فعلی از تونل موجود.", networkAnalytics: "تحلیل شبکه", analyticsTitle: "یک نمای یکپارچه از فعالیت شبکه شما.", analyticsLead: "مقصدهای ثبت‌شده و اندازه‌گیری زنده تونل؛ جدا و واقعی.", overview: "نمای کلی", totalUploaded: "مجموع ارسال", totalDownloaded: "مجموع دریافت", totalTraffic: "مجموع ترافیک", destinationIPs: "IPهای مقصد", destinationCountries: "کشورهای مقصد", activeSession: "نشست فعال", recordedUsage: "مصرف ثبت‌شده", detectedRecords: "شناسایی‌شده در مقصدهای ثبت‌شده", countryMetadataUnavailable: "فراداده در دسترس نیست", countryMetadataDetail: "API مصرف مقصدها را ثبت می‌کند، اما غنی‌سازی مطمئن کشور را ارائه نمی‌دهد.", trafficDistribution: "توزیع ترافیک", uploadDownloadMix: "مقایسه ارسال و دریافت", destinationDistribution: "توزیع مقصدها", relativeDestinationShare: "سهم نسبی ترافیک بر اساس مقصد", topDestinations: "مقصدهای برتر ثبت‌شده", countryDistribution: "توزیع کشورها", dataBoundary: "مرز داده", ipObservatory: "رصدخانه آدرس IP", destinationRecords: "رکوردهای مقصد ثبت‌شده", hostRecordsOnly: "نام میزبان و IP از دفتر مصرف", searchIpHostname: "جست‌وجوی IP یا نام میزبان", sortBy: "مرتب‌سازی بر اساس", sortTraffic: "حجم ترافیک", sortDestination: "مقصد", sortIp: "آدرس IP", sortCountryUnavailable: "کشور (در دسترس نیست)", destination: "مقصد", ipAddress: "آدرس IP", country: "کشور", traffic: "ترافیک", breakdown: "تفکیک", relativeShare: "سهم", ipTag: "IP", hostTag: "میزبان", liveSession: "نشست زنده", sessionTraffic: "ترافیک نشست", notConnected: "نشست فعالی وجود ندارد", oneSecondSamples: "نمونه‌های ۱ ثانیه‌ای", combinedTraffic: "ترافیک ترکیبی", chartAwaiting: "نمونه‌های زنده هنگام فعال بودن تونل نمایش داده می‌شوند.", downloadRate: "سرعت دریافت", uploadRate: "سرعت ارسال", sessionDuration: "مدت نشست", quotaRemaining: "سهمیه باقی‌مانده", historyBoundary: "مرز تاریخچه", historyUnavailable: "سری زمانی تاریخی در دسترس نیست", historyUnavailableDetail: "این نسخه نمونه‌های زنده نشست و مقصدهای ثبت‌شده را دارد، نه داده‌های روزانه، هفتگی یا ماهانه.", recordedDestinations: "مقصدهای ثبت‌شده", whereTrafficWent: "ترافیک ثبت‌شده به کجا رفته است.", retainedUsage: "داده مصرف نگه‌داری‌شده", destinationNote: "مجموع تجمعی مقصدها با آخرین فعالیت؛ نه تاریخچه سری زمانی.", windowsApplications: "برنامه‌های ویندوز", applicationTraffic: "ترافیک برنامه‌ها", windowsOnly: "فقط ویندوز",
+    activityEyebrow: "دفتر فعالیت", activityTitle: "گزارش واقعی برنامه.", activityLead: "لاگ‌ها و اعلان‌های برنامه — بدون تاریخچه ساختگی.", copyLogs: "کپی لاگ‌ها", applicationLogs: "لاگ‌های برنامه", diagnosticRecord: "گزارش عیب‌یابی", openLogFile: "باز کردن فایل لاگ", logsEmpty: "برای بارگذاری گزارش فعلی، لاگ‌ها را باز کنید.", destinationUsage: "مصرف مقصدها", searchDestinations: "جست‌وجوی مقصدها", total: "مجموع", clearHistory: "پاک‌کردن تاریخچه", usageUnavailable: "داده مصرف در دسترس نیست", usageUnavailableDetail: "برنامه نتوانست مصرف مقصدهای نگه‌داری‌شده را بخواند.", retryUsage: "تلاش دوباره برای مصرف", logsUnavailable: "لاگ‌ها در دسترس نیستند", logsUnavailableDetail: "برنامه نتوانست گزارش عیب‌یابی را بخواند.", retryLogs: "تلاش دوباره برای لاگ‌ها",
     settingsEyebrow: "اتاق کنترل", settingsTitle: "نحوه حفاظت زئوس را تنظیم کنید.", settingsLead: "تنظیمات اتصال، مسیریابی، شروع و ظاهر.", accounts: "حساب‌ها", accountsTitle: "حساب‌های موزیلا", addAccount: "افزودن حساب دیگر", connection: "اتصال", connectionSettings: "رفتار اتصال", autoConnect: "اتصال هنگام شروع", autoConnectDetail: "با شروع زئوس، خودکار دوباره متصل شود.", autoSwitch: "تعویض خودکار حساب", autoSwitchDetail: "وقتی سهمیه یک حساب تمام شد از حساب بعدی استفاده شود.", startAtLogin: "شروع هنگام ورود", startWithWindows: "شروع با ویندوز", openAtLogin: "باز شدن هنگام ورود", autostartDetail: "زئوس هنگام ورود شما خودکار اجرا شود.", killSwitch: "کلید قطع اضطراری", killSwitchDetail: "اگر VPN قطع شد، ترافیک را تا اتصال دوباره مسدود کند.", routing: "مسیریابی", routingSettings: "مرزهای ترافیک", bypassIran: "عبور مستقیم از سایت‌های ایرانی", bypassIranDetail: "دامنه‌های .ir مستقیم متصل می‌شوند.", bypassLan: "عبور مستقیم از شبکه محلی", bypassLanDetail: "پرینترها، روترها و شبکه محلی مستقیم می‌مانند.", bypassLanUnsupported: "برای عبور مستقیم مسیرهای شبکه محلی در اندروید، نسخه ۱۳ یا جدیدتر لازم است.", fullVpnApps: "برنامه‌های VPN کامل", allApps: "همه برنامه‌ها", selectedOnly: "فقط انتخاب‌شده‌ها", exceptSelected: "به‌جز انتخاب‌شده‌ها", chooseApps: "انتخاب برنامه‌ها", searchApps: "جست‌وجوی برنامه‌ها", antiFiltering: "ضدفیلتر", antiFilteringSettings: "جزئیات انتقال", tlsFragmentation: "قطعه‌قطعه‌سازی TLS", tlsFragmentationDetail: "نام سرورها را از فیلتر SNI پنهان می‌کند.", tlsAuto: "خودکار", tlsAlways: "همیشه (SNI)", tlsFirstByte: "بایت اول", tlsOff: "خاموش", localProxyPort: "پورت پروکسی محلی", localProxyPortDetail: "HTTP و SOCKS5 برای برنامه‌های دیگر.", appearance: "ظاهر", appearanceTitle: "مرکز فرماندهی آرام‌تر.", language: "زبان", languageDetail: "جهت رابط را انتخاب کنید.", english: "English", persian: "فارسی", visualEffects: "جلوه‌های محیطی", visualEffectsDetail: "حرکت و نورپردازی تزئینی را کاهش دهید.", troubleshooting: "عیب‌یابی", diagnosticsTitle: "عیب‌یابی", viewLogs: "مشاهده لاگ‌ها", openStatistics: "باز کردن آمار",
     confirmation: "تأیید", confirm: "تأیید", elevatedAccess: "دسترسی سطح بالا", administratorNeeded: "دسترسی مدیر لازم است", restartAsAdmin: "راه‌اندازی دوباره به‌عنوان مدیر", useSystemProxy: "استفاده از پروکسی سیستم",
     checkingData: "در حال بررسی داده…", outOfData: "داده تمام شده", signInExpired: "ورود منقضی شده · حذف و دوباره اضافه کنید", active: "فعال", use: "استفاده", noApps: "برنامه‌ای پیدا نشد", noUsage: "هنوز مصرفی ثبت نشده است.", noUsageDetail: "اتصال برقرار کنید و از برنامه‌ها استفاده کنید — مصرف اینجا نمایش داده می‌شود.", noActiveSession: "نشست فعالی وجود ندارد", recordedNoData: "هنوز مقصدی ثبت نشده است.", lastActive: "آخرین فعالیت", noLogs: "خط لاگی در دسترس نیست.", logsCopied: "لاگ‌ها کپی شد", usageCleared: "تاریخچه مصرف پاک شد", nowUsing: "اکنون در حال استفاده از", openAppSettings: "باز کردن تنظیمات", adminTun: "حالت VPN کامل یک آداپتور مجازی می‌سازد تا همه برنامه‌ها محافظت شوند. ویندوز برای این کار دسترسی مدیر می‌خواهد.", adminKill: "کلید قطع اضطراری برای مسدودکردن ترافیک از فایروال ویندوز استفاده می‌کند. ویندوز برای این کار دسترسی مدیر می‌خواهد.",
@@ -62,6 +62,7 @@ let usageData = null;
 let usageApps = [];
 let usageLoading = false;
 let usageError = "";
+let usageSort = "total";
 let expandedApp = null;
 let webLoginPending = false;
 let currentScreen = "home";
@@ -220,7 +221,7 @@ function navigate(screen, load = true) {
     renderServers();
     if (!servers.length) loadServers(false);
   }
-  if (screen === "statistics" || screen === "activity") loadUsage();
+  if (screen === "statistics") loadUsage();
   if (screen === "activity" && !logsLoaded) loadLogs();
 }
 function showLogin() {
@@ -418,9 +419,9 @@ function renderHome() {
 }
 
 function renderSessionDuration() {
-  const el = $("#stats-duration");
-  if (!el) return;
-  el.textContent = snap && snap.status === "connected" && snap.connectedAt ? fmtDuration(Date.now() - snap.connectedAt) : "—";
+  const value = snap && snap.status === "connected" && snap.connectedAt ? fmtDuration(Date.now() - snap.connectedAt) : "—";
+  const targets = [$("#analytics-session-duration")].filter(Boolean);
+  for (const el of targets) el.textContent = value;
 }
 
 function renderLiveMetrics() {
@@ -433,8 +434,6 @@ function renderLiveMetrics() {
   $("#stats-total").textContent = fmtBytes(total);
   $("#stats-down-rate").textContent = `${fmtBytes(lastStats.downRate)}/s`;
   $("#stats-up-rate").textContent = `${fmtBytes(lastStats.upRate)}/s`;
-  $("#stats-down-speed").textContent = `${fmtBytes(lastStats.downRate)}/s`;
-  $("#stats-up-speed").textContent = `${fmtBytes(lastStats.upRate)}/s`;
   renderSessionDuration();
   $("#stats-down").textContent = fmtBytes(lastStats.down);
   $("#stats-up").textContent = fmtBytes(lastStats.up);
@@ -563,7 +562,6 @@ async function loadUsage() {
   usageError = "";
   usageData = null;
   renderStatistics();
-  renderActivity();
   try {
     usageData = await api().GetUsage(0);
   } catch (error) {
@@ -573,18 +571,163 @@ async function loadUsage() {
   try { usageApps = snap && snap.platform === "windows" ? await api().GetAppUsage() : []; } catch (error) { usageApps = []; }
   usageLoading = false;
   renderStatistics();
-  renderActivity();
 }
-function usageTotals() {
-  const data = usageData || [];
-  return { down: data.reduce((sum, item) => sum + (item.down || 0), 0), up: data.reduce((sum, item) => sum + (item.up || 0), 0) };
+function usageNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
 }
-function destinationRows(data, limit = 0) {
-  if (usageError) return `<div class="list-msg state-message error-state"><span class="empty-mark">!</span><strong>${esc(t("usageUnavailable"))}</strong><small>${esc(t("usageUnavailableDetail"))}</small><small class="technical-value">${esc(usageError)}</small><button class="btn secondary compact" type="button" data-retry-usage>${esc(t("retryUsage"))}</button></div>`;
-  if (data == null) return `<div class="list-msg state-message"><span class="loading-glyph" aria-hidden="true"></span><span>${esc(t("loading"))}</span></div>`;
-  const rows = data.slice(0, limit || data.length);
-  if (!rows.length) return `<div class="list-msg"><span class="empty-mark">◆</span><br>${esc(t("recordedNoData"))}</div>`;
-  return rows.map((item) => `<div class="destination-row"><div class="destination-main"><span class="destination-rank">${String(rows.indexOf(item) + 1).padStart(2, "0")}</span><div><b dir="auto" title="${esc(item.host)}">${esc(item.host)}</b><small>${esc(t("lastActive"))}${item.last ? ` · ${esc(fmtDateSeconds(item.last))}` : ""}</small></div></div><div class="destination-values"><span>↓ ${esc(fmtBytes(item.down))}</span><span>↑ ${esc(fmtBytes(item.up))}</span><strong>${esc(fmtBytes((item.up || 0) + (item.down || 0)))} </strong></div></div>`).join("");
+function usageTotal(entry) { return usageNumber(entry && entry.up) + usageNumber(entry && entry.down); }
+function isIPv4(value) {
+  const parts = String(value || "").split(".");
+  return parts.length === 4 && parts.every((part) => /^(0|[1-9]\d{0,2})$/.test(part) && Number(part) <= 255);
+}
+function isIPv6(value) {
+  const host = String(value || "").toLowerCase();
+  if (!host.includes(":")) return false;
+  if (!/^[0-9a-f:]+$/.test(host) || host.includes(":::")) return false;
+  const halves = host.split("::");
+  if (halves.length > 2) return false;
+  const left = halves[0] ? halves[0].split(":").filter(Boolean) : [];
+  const right = halves.length === 2 && halves[1] ? halves[1].split(":").filter(Boolean) : [];
+  if (left.some((part) => !/^[0-9a-f]{1,4}$/.test(part)) || right.some((part) => !/^[0-9a-f]{1,4}$/.test(part))) return false;
+  return halves.length === 2 ? left.length + right.length < 8 : left.length === 8;
+}
+function isDestinationIP(host) {
+  const value = String(host || "").trim().replace(/^\[|\]$/g, "");
+  return isIPv4(value) || isIPv6(value);
+}
+function usageTotals(data = usageData) {
+  const entries = Array.isArray(data) ? data : [];
+  return { down: entries.reduce((sum, item) => sum + usageNumber(item.down), 0), up: entries.reduce((sum, item) => sum + usageNumber(item.up), 0) };
+}
+function usageSummary(data = usageData) {
+  const entries = Array.isArray(data) ? data : [];
+  return { ips: new Set(entries.filter((item) => isDestinationIP(item.host)).map((item) => String(item.host).toLowerCase())).size, records: entries.length };
+}
+function analyticsState(kind, detail = "") {
+  if (kind === "error") return `<div class="analytics-state error-state"><span class="empty-mark">!</span><strong>${esc(t("usageUnavailable"))}</strong><small>${esc(t("usageUnavailableDetail"))}</small>${detail ? `<small class="technical-value">${esc(detail)}</small>` : ""}<button class="btn secondary compact" type="button" data-retry-usage>${esc(t("retryUsage"))}</button></div>`;
+  if (kind === "loading") return `<div class="analytics-state"><span class="loading-glyph" aria-hidden="true"></span><span>${esc(t("loading"))}</span></div>`;
+  return `<div class="analytics-state"><span class="empty-mark">◆</span><strong>${esc(t("recordedNoData"))}</strong><small>${esc(t("noUsageDetail"))}</small></div>`;
+}
+function sortedUsageEntries(data, order = usageSort) {
+  const entries = [...(Array.isArray(data) ? data : [])];
+  const sort = order || "total";
+  entries.sort((a, b) => {
+    const ah = String(a.host || "");
+    const bh = String(b.host || "");
+    if (sort === "host") return ah.localeCompare(bh, locale === "fa" ? "fa" : "en", { sensitivity: "base" });
+    if (sort === "ip") {
+      const aip = isDestinationIP(ah) ? 0 : 1;
+      const bip = isDestinationIP(bh) ? 0 : 1;
+      return aip - bip || ah.localeCompare(bh, "en", { sensitivity: "base" });
+    }
+    if (sort === "country") return ah.localeCompare(bh, "en", { sensitivity: "base" });
+    return usageTotal(b) - usageTotal(a) || ah.localeCompare(bh, "en", { sensitivity: "base" });
+  });
+  return entries;
+}
+function setAnalyticsText(selector, value) {
+  const el = $(selector);
+  if (el) el.textContent = value;
+}
+function renderAnalyticsDonut(data) {
+  const down = usageTotals(data).down;
+  const up = usageTotals(data).up;
+  const total = down + up;
+  const loading = data == null && usageLoading;
+  const unavailable = data == null && !!usageError;
+  const downShare = total ? (down / total) * 100 : 0;
+  const upShare = total ? (up / total) * 100 : 0;
+  const segment = (selector, share, offset = 0) => {
+    const el = $(selector);
+    if (!el) return;
+    el.setAttribute("stroke-dasharray", `${share.toFixed(3)} ${(100 - share).toFixed(3)}`);
+    el.setAttribute("stroke-dashoffset", String(-offset));
+  };
+  segment("#analytics-donut-down", downShare);
+  segment("#analytics-donut-up", upShare, downShare);
+  const totalText = loading ? "…" : unavailable ? "—" : fmtBytes(total);
+  setAnalyticsText("#analytics-donut-total", totalText);
+  setAnalyticsText("#analytics-donut-down-value", loading || unavailable ? "—" : fmtBytes(down));
+  setAnalyticsText("#analytics-donut-up-value", loading || unavailable ? "—" : fmtBytes(up));
+  setAnalyticsText("#analytics-donut-down-share", total ? `${downShare.toFixed(1)}%` : "—");
+  setAnalyticsText("#analytics-donut-up-share", total ? `${upShare.toFixed(1)}%` : "—");
+  const downSegment = $("#analytics-donut-down");
+  const upSegment = $("#analytics-donut-up");
+  const downLabel = `${t("download")}: ${fmtBytes(down)}${total ? ` (${downShare.toFixed(1)}%)` : ""}`;
+  const upLabel = `${t("upload")}: ${fmtBytes(up)}${total ? ` (${upShare.toFixed(1)}%)` : ""}`;
+  for (const [segmentEl, label] of [[downSegment, downLabel], [upSegment, upLabel]]) {
+    if (segmentEl) { segmentEl.setAttribute("title", label); segmentEl.setAttribute("aria-label", label); }
+  }
+  const title = total ? `${t("download")} ${fmtBytes(down)}, ${t("upload")} ${fmtBytes(up)}, ${t("totalTraffic")} ${fmtBytes(total)}` : t("chartAwaiting");
+  const titleEl = $("#analytics-donut-title");
+  if (titleEl) titleEl.textContent = title;
+  const donut = $("#analytics-donut");
+  if (donut) donut.setAttribute("aria-label", title);
+}
+function renderAnalyticsBars(data) {
+  const box = $("#analytics-destination-bars");
+  if (!box) return;
+  if (usageError) { box.innerHTML = analyticsState("error", usageError); return; }
+  if (data == null) { box.innerHTML = analyticsState("loading"); return; }
+  if (!data.length) { box.innerHTML = analyticsState("empty"); return; }
+  const rows = sortedUsageEntries(data, "total").slice(0, 6);
+  const max = Math.max(...rows.map(usageTotal), 1);
+  const grand = usageTotals(data).up + usageTotals(data).down;
+  box.innerHTML = rows.map((item, index) => {
+    const host = String(item.host || t("unknown"));
+    const total = usageTotal(item);
+    const share = grand ? (total / grand) * 100 : 0;
+    const width = (total / max) * 100;
+    return `<div class="analytics-bar-row" title="${esc(`${host} · ${fmtBytes(total)} · ${share.toFixed(1)}%`)}"><div class="analytics-bar-label"><span>${String(index + 1).padStart(2, "0")}</span><b dir="auto">${esc(host)}</b><small>${esc(fmtBytes(total))} · ${share.toFixed(1)}%</small></div><div class="analytics-bar-track"><i style="width:${width.toFixed(2)}%"></i></div></div>`;
+  }).join("");
+}
+function destinationRecords(data) {
+  if (usageError) return analyticsState("error", usageError);
+  if (data == null) return analyticsState("loading");
+  if (!data.length) return analyticsState("empty");
+  const query = $("#analytics-search") ? $("#analytics-search").value.trim().toLowerCase() : "";
+  const filtered = sortedUsageEntries(data).filter((item) => !query || String(item.host || "").toLowerCase().includes(query));
+  if (!filtered.length) return `<div class="analytics-state"><span class="empty-mark">◇</span><strong>${esc(t("noMatches"))}</strong></div>`;
+  const grand = usageTotals(data).up + usageTotals(data).down;
+  const header = `<div class="analytics-record-header" role="row"><span role="columnheader">${esc(t("destination"))}</span><span role="columnheader">${esc(t("ipAddress"))}</span><span role="columnheader">${esc(t("country"))}</span><span role="columnheader">${esc(t("traffic"))}</span><span role="columnheader">${esc(t("breakdown"))}</span></div>`;
+  const rows = filtered.map((item) => {
+    const host = String(item.host || t("unknown"));
+    const ip = isDestinationIP(host);
+    const up = usageNumber(item.up);
+    const down = usageNumber(item.down);
+    const total = up + down;
+    const share = grand ? (total / grand) * 100 : 0;
+    const last = item.last ? `${t("lastActive")} · ${fmtDateSeconds(item.last)}` : t("recordedUsage");
+    const details = `${host}: ${fmtBytes(total)} ${t("total").toLowerCase()}, ${fmtBytes(down)} ${t("download").toLowerCase()}, ${fmtBytes(up)} ${t("upload").toLowerCase()}`;
+    return `<div class="analytics-record-row" role="listitem" title="${esc(details)}"><div class="analytics-record-destination"><span class="analytics-record-kind ${ip ? "ip" : "host"}">${esc(t(ip ? "ipTag" : "hostTag"))}</span><div><b dir="auto">${esc(host)}</b><small>${esc(last)}</small></div></div><span class="analytics-record-ip technical-value" data-label="${esc(t("ipAddress"))}">${ip ? esc(host) : "—"}</span><span class="analytics-record-country" data-label="${esc(t("country"))}" title="${esc(t("countryMetadataUnavailable"))}">—</span><span class="analytics-record-traffic" data-label="${esc(t("traffic"))}"><strong>${esc(fmtBytes(total))}</strong><small>${share.toFixed(1)}% ${esc(t("relativeShare"))}</small><i><em style="width:${share.toFixed(2)}%"></em></i></span><span class="analytics-record-breakdown" data-label="${esc(t("breakdown"))}"><span>↓ ${esc(fmtBytes(down))}</span><span>↑ ${esc(fmtBytes(up))}</span></span></div>`;
+  }).join("");
+  return `<div class="analytics-record-list" role="list">${header}${rows}</div>`;
+}
+function renderAnalytics() {
+  const data = usageData;
+  const loaded = Array.isArray(data) && !usageError;
+  const loading = data == null && usageLoading;
+  const unavailable = data == null && !!usageError;
+  const totals = usageTotals(data);
+  const summary = usageSummary(data);
+  const value = (loaded ? fmtBytes : () => "—");
+  setAnalyticsText("#analytics-total-up", loaded ? value(totals.up) : loading ? "…" : "—");
+  setAnalyticsText("#analytics-total-down", loaded ? value(totals.down) : loading ? "…" : "—");
+  setAnalyticsText("#analytics-total-traffic", loaded ? value(totals.up + totals.down) : loading ? "…" : "—");
+  setAnalyticsText("#analytics-ip-count", loaded ? fmtNumber(summary.ips) : loading ? "…" : "—");
+  setAnalyticsText("#analytics-country-count", "—");
+  const note = $("#stats-usage-note");
+  if (note) note.textContent = usageError ? `${t("usageUnavailable")}: ${usageError}` : usageLoading ? t("loading") : data && data.length ? t("destinationNote") : t("recordedNoData");
+  renderAnalyticsDonut(data);
+  renderAnalyticsBars(data);
+  const records = $("#stats-destinations");
+  if (records) records.innerHTML = destinationRecords(data);
+  const country = $("#analytics-country-state");
+  if (country && unavailable) country.innerHTML = analyticsState("error", usageError);
+  else if (country && loading) country.innerHTML = `<span class="loading-glyph" aria-hidden="true"></span><strong>${esc(t("loading"))}</strong>`;
+  else if (country) country.innerHTML = `<span class="analytics-state-mark" aria-hidden="true">◇</span><strong>${esc(t("countryMetadataUnavailable"))}</strong><small>${esc(t("countryMetadataDetail"))}</small>`;
+  renderSessionDuration();
 }
 function appRows() {
   if (!usageApps.length) return `<div class="list-msg">${esc(t("noUsage"))}</div>`;
@@ -593,28 +736,23 @@ function appRows() {
 function renderStatistics() {
   if (!snap) return;
   const status = snap.status || "disconnected";
-  $("#stats-session-state").textContent = status === "connected" ? t("stateConnected") : t("notConnected");
-  $("#stats-live-label").textContent = status === "connected" ? t("oneSecondSamples") : t("session");
+  const state = $("#stats-session-state");
+  const label = $("#stats-live-label");
+  if (state) state.textContent = status === "connected" ? t("stateConnected") : t("notConnected");
+  if (label) label.textContent = status === "connected" ? t("oneSecondSamples") : t("session");
   const quota = lastStats.quotaLimit > 0 ? `${fmtBytes(lastStats.quotaLeft)} / ${fmtBytes(lastStats.quotaLimit)}` : t("noQuota");
-  $("#stats-quota").textContent = quota;
-  const totals = usageTotals();
-  $("#stats-destinations").innerHTML = destinationRows(usageData, 8);
-  $("#stats-usage-note").textContent = usageError ? `${t("usageUnavailable")}: ${usageError}` : usageLoading ? t("loading") : usageData && usageData.length ? t("destinationNote") : t("recordedNoData");
+  setAnalyticsText("#stats-quota", quota);
+  renderAnalytics();
   const appsPanel = $("#stats-apps");
-  appsPanel.hidden = !(snap.platform === "windows" && usageApps.length);
-  if (!appsPanel.hidden) $("#stats-apps-list").innerHTML = appRows();
+  if (appsPanel) {
+    appsPanel.hidden = !(snap.platform === "windows" && usageApps.length);
+    if (!appsPanel.hidden) $("#stats-apps-list").innerHTML = appRows();
+  }
   renderLiveMetrics();
-  void totals;
 }
 function renderActivity() {
+  // Usage records are intentionally rendered only in the unified analytics panel.
   if (!snap) return;
-  const totals = usageTotals();
-  $("#activity-usage-total-down").textContent = usageData ? fmtBytes(totals.down) : "—";
-  $("#activity-usage-total-up").textContent = usageData ? fmtBytes(totals.up) : "—";
-  $("#activity-usage-total").textContent = usageData ? fmtBytes(totals.down + totals.up) : "—";
-  const query = $("#activity-usage-search") ? $("#activity-usage-search").value.trim().toLowerCase() : "";
-  const filtered = (usageData || []).filter((item) => !query || String(item.host || "").toLowerCase().includes(query));
-  $("#activity-usage-list").innerHTML = usageData == null ? destinationRows(null) : destinationRows(filtered);
 }
 async function loadLogs() {
   if (logsLoading) return;
@@ -848,13 +986,15 @@ function wire() {
   $("#panel-scrim").onclick = closePanel;
 
   $("#btn-usage").onclick = () => navigate("statistics");
-  $("#activity-usage-search").oninput = renderActivity;
+  $("#analytics-search").oninput = renderAnalytics;
+  $("#analytics-sort").onchange = (event) => { usageSort = event.target.value; renderAnalytics(); };
   $("#stats-destinations").onclick = (event) => { if (event.target.closest("[data-retry-usage]")) loadUsage(); };
-  $("#activity-usage-list").onclick = (event) => { if (event.target.closest("[data-retry-usage]")) loadUsage(); };
+  $("#analytics-destination-bars").onclick = (event) => { if (event.target.closest("[data-retry-usage]")) loadUsage(); };
+  $("#analytics-country-state").onclick = (event) => { if (event.target.closest("[data-retry-usage]")) loadUsage(); };
   $("#logs").onclick = (event) => { if (event.target.closest("[data-retry-logs]")) loadLogs(); };
   $("#btn-usage-reset").onclick = async () => {
     if (!(await askConfirm(t("clearHistory"), t("confirmation")))) return;
-    try { await api().ResetUsage(); usageData = []; usageApps = []; renderStatistics(); renderActivity(); toast(t("usageCleared")); } catch (error) { toast(errText(error)); }
+    try { await api().ResetUsage(); usageData = []; usageApps = []; renderStatistics(); toast(t("usageCleared")); } catch (error) { toast(errText(error)); }
   };
   $("#btn-logs").onclick = async () => { navigate("activity"); if (!logsLoaded) await loadLogs(); };
   $("#btn-copy-logs").onclick = async () => { if (!logsLoaded) await loadLogs(); try { await navigator.clipboard.writeText($("#logs").innerText); toast(t("logsCopied")); } catch (e) { toast(errText(e)); } };

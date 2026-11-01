@@ -90,6 +90,9 @@ class MainActivity : Activity() {
             }
 
             override fun onPageFinished(view: WebView, url: String) {
+                // The shared UI hides controls whose native API contract is not
+                // available on this Android release (route exclusion needs API 33).
+                js("document.documentElement.dataset.androidApi='${Build.VERSION.SDK_INT}';window.applyPlatform&&window.applyPlatform();window.renderSettings&&window.renderSettings()")
                 // Re-apply the insets now that the page can receive them.
                 view.requestApplyInsets()
             }
@@ -225,9 +228,9 @@ class MainActivity : Activity() {
 
     @Deprecated("Back gesture API")
     override fun onBackPressed() {
-        // Close an open sheet first; otherwise keep the app (and VPN) running.
+        // Close an open panel or dialog first; otherwise keep the app (and VPN) running.
         web.evaluateJavascript(
-            "(function(){if(document.querySelector('.sheet:not([hidden]),.modal:not([hidden])')){" +
+            "(function(){if(document.querySelector('.modal-panel:not([hidden]),.panel-scrim:not([hidden]),.modal:not([hidden])')){" +
                 "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));return true}return false})()"
         ) { handled -> if (handled != "true") moveTaskToBack(true) }
     }

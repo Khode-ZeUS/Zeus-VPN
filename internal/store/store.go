@@ -146,7 +146,10 @@ func LoadSettings() Settings {
 	if s.Mode != ModeTUN {
 		s.Mode = ModeProxy
 	}
-	if s.ProxyPort <= 0 || s.ProxyPort > 65535 {
+	// Ports below 1024 require elevation and are never valid for the
+	// user-owned local proxy. Repair old persisted values before the engine
+	// attempts to bind them.
+	if s.ProxyPort < 1024 || s.ProxyPort > 65535 {
 		s.ProxyPort = 10820
 	}
 	switch s.AppTunnelMode {

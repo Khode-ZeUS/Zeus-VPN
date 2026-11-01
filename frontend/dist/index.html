@@ -1,226 +1,228 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" dir="ltr">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <title>Zeus VPN</title>
+  <meta name="theme-color" content="#080D18">
+  <title>ZEUS VPN</title>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body data-screen="home">
   <div class="app-backdrop" aria-hidden="true">
     <div class="backdrop-image"></div>
+    <div class="backdrop-atmosphere"></div>
     <div class="backdrop-shade"></div>
     <div class="backdrop-light"></div>
+    <div class="backdrop-grain"></div>
   </div>
-  <div class="bg-glow"></div>
 
   <header class="titlebar">
-    <div class="brand"><img src="logo.svg" alt=""><span>Zeus VPN</span></div>
+    <div class="brand-lockup">
+      <img src="logo.svg" alt="">
+      <span class="brand-name">ZEUS <b>VPN</b></span>
+      <span class="brand-rule"></span>
+      <span class="titlebar-meta" data-i18n="brandTagline">THE ART OF DIGITAL PROTECTION</span>
+    </div>
     <div class="win-buttons">
-      <button class="win-btn" id="btn-min" title="Minimize"><svg viewBox="0 0 12 12"><path d="M2 6h8"/></svg></button>
-      <button class="win-btn close" id="btn-close" title="Close"><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6"/></svg></button>
+      <button class="win-btn" id="btn-min" data-i18n-title="minimize" title="Minimize" aria-label="Minimize"><svg viewBox="0 0 12 12"><path d="M2 6h8"/></svg></button>
+      <button class="win-btn close" id="btn-close" data-i18n-title="close" title="Close" aria-label="Close"><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6"/></svg></button>
     </div>
   </header>
 
-  <!-- Login -->
-  <main class="view" id="view-login" hidden>
-    <div class="login-hero">
-      <img class="login-logo" src="logo.svg" alt="">
-      <h1>Zeus VPN</h1>
-      <p class="muted" id="login-subtitle">Sign in with your Mozilla account</p>
-    </div>
-    <div class="form">
-      <div class="form-error" id="login-error"></div>
-      <div id="login-direct" hidden>
-        <input type="email" id="login-email" placeholder="Email" autocomplete="email" inputmode="email">
-        <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
-        <input type="text" id="login-code" placeholder="Verification code" hidden>
-        <button class="btn primary" type="button" id="login-direct-go"><span>Sign in</span></button>
-      </div>
-      <button class="btn primary" type="button" id="login-web"><span>Sign in with Firefox</span></button>
-      <button class="btn ghost" type="button" id="login-cancel" hidden>Cancel</button>
-      <p class="muted small center" id="login-hint">The Mozilla sign-in page opens inside this window. On some networks it needs a VPN connection — connect first, then retry.</p>
-    </div>
-    <div class="login-foot">
-      <p class="muted small">Free with any Mozilla account &middot; 50&nbsp;GB per month</p>
-      <a href="#" id="link-signup">Create a free account</a>
-    </div>
-  </main>
-
-  <!-- Home -->
-  <main class="view" id="view-home" hidden>
-    <div class="topbar">
-      <button class="account" id="btn-account" title="Settings">
-        <span class="avatar" id="avatar">F</span>
-        <span class="account-email" id="account-email"></span>
-        <span class="acct-count" id="acct-count" hidden></span>
-      </button>
-      <button class="icon-btn" id="btn-settings" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></button>
-    </div>
-
-    <div class="segmented" id="mode-switch">
-      <button data-mode="proxy"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>System Proxy</button>
-      <button data-mode="tun"><svg viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6Z"/></svg>Full VPN</button>
-      <span class="seg-indicator"></span>
-    </div>
-
-    <section class="orb-wrap">
-      <button class="orb" id="orb" data-status="disconnected" aria-label="Connect">
-        <span class="orb-ring"></span>
-        <span class="orb-core">
-          <svg viewBox="0 0 24 24"><path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/></svg>
-        </span>
-      </button>
-      <div class="status-text" id="status-text">Not connected</div>
-      <div class="status-sub" id="status-sub">Tap to connect</div>
-    </section>
-
-    <div class="banner" id="banner" hidden></div>
-
-    <button class="card location" id="btn-location">
-      <span class="flag" id="loc-flag"></span>
-      <span class="loc-text">
-        <span class="loc-label">Location</span>
-        <span class="loc-name" id="loc-name">Recommended</span>
-      </span>
-      <span class="loc-ping" id="loc-ping"></span>
-      <svg class="chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>
-    </button>
-
-    <div class="stats">
-      <div class="card stat">
-        <span class="stat-icon down"><svg viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></svg></span>
-        <span class="stat-body"><span class="stat-value" id="rate-down">0 B/s</span><span class="stat-label" id="total-down">Download</span></span>
-      </div>
-      <div class="card stat">
-        <span class="stat-icon up"><svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg></span>
-        <span class="stat-body"><span class="stat-value" id="rate-up">0 B/s</span><span class="stat-label" id="total-up">Upload</span></span>
+  <!-- The intro is a visual shell around real bridge/GetSnapshot readiness. -->
+  <section id="intro-screen" class="intro-screen" aria-live="polite">
+    <div class="intro-architecture intro-architecture-left"></div>
+    <div class="intro-architecture intro-architecture-right"></div>
+    <div class="intro-content">
+      <div class="intro-emblem proposed-mark"><img src="zeus-royal-mark.png" alt="ZEUS royal mark"></div>
+      <div class="intro-rule"><span></span><i></i><span></span></div>
+      <p class="intro-kicker" data-i18n="introKicker">THE ART OF DIGITAL PROTECTION</p>
+      <h1>ZEUS <span>VPN</span></h1>
+      <p class="intro-status" id="intro-status" data-i18n="introPreparing">Preparing your command center</p>
+      <p class="intro-detail" id="intro-detail" data-i18n="introConnectingBridge">Connecting to the application bridge</p>
+      <div class="intro-error" id="intro-error" hidden>
+        <p id="intro-error-message" data-i18n="introError">The application could not read its initial state.</p>
+        <button class="btn secondary compact" id="intro-retry" type="button" data-i18n="retry">Retry</button>
       </div>
     </div>
-
-    <div class="card info">
-      <div class="info-row"><span class="muted">IP address</span><span id="exit-ip">—</span></div>
-      <div class="info-row" id="quota-row"><span class="muted">Monthly data</span><span id="quota-text">—</span></div>
-      <div class="quota-bar"><span id="quota-fill"></span></div>
-      <div class="info-row" id="total-row" hidden><span class="muted">All accounts</span><span id="total-text">—</span></div>
-    </div>
-  </main>
-
-  <!-- Sheets -->
-  <div class="scrim" id="scrim" hidden></div>
-
-  <section class="sheet" id="sheet-servers" hidden>
-    <div class="sheet-head">
-      <h3>Choose location</h3>
-      <button class="icon-btn" id="btn-ping" title="Test latency"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></button>
-      <button class="icon-btn" data-close title="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
-    </div>
-    <label class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="server-search" placeholder="Search country or city"></label>
-    <div class="server-list" id="server-list"></div>
+    <div class="intro-footer"><span>ZEUS VPN</span><span class="intro-footer-mark">◆</span><span data-i18n="introLocalEngine">Local application engine</span></div>
   </section>
 
-  <section class="sheet" id="sheet-settings" hidden>
-    <div class="sheet-head">
-      <h3>Settings</h3>
-      <button class="icon-btn" data-close title="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
-    </div>
-    <div class="settings">
-      <div class="group-label">Accounts</div>
-      <div class="accounts" id="account-list"></div>
-      <button class="btn ghost" id="btn-add-account"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add another account</button>
-      <label class="toggle-row"><span><b>Auto-switch accounts</b><small>Use the next account when one runs out of data</small></span><input type="checkbox" id="set-autoswitch"><i></i></label>
-      <button class="btn ghost" id="btn-usage"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg>Data usage by destination</button>
-      <div class="group-label" id="group-protection">Protection</div>
-      <label class="toggle-row"><span><b>Kill switch</b><small>If the VPN drops, block the internet until it reconnects or you disconnect. Needs administrator.</small></span><input type="checkbox" id="set-killswitch"><i></i></label>
-      <div class="group-label">Routing</div>
-      <label class="toggle-row"><span><b>Bypass Iranian sites</b><small>.ir domains connect directly</small></span><input type="checkbox" id="set-bypass-ir"><i></i></label>
-      <label class="toggle-row"><span><b>Bypass local network</b><small>Printers, routers and LAN stay direct</small></span><input type="checkbox" id="set-bypass-lan"><i></i></label>
-      <div class="group-label" id="group-appfilter" hidden>Full VPN apps</div>
-      <div class="app-filter" id="app-filter" hidden>
-        <div class="seg3" id="set-apptunnel">
-          <button data-mode="all">All apps</button>
-          <button data-mode="include">Selected only</button>
-          <button data-mode="exclude">Except selected</button>
+  <!-- Login remains a real application state, not a decorative intro state. -->
+  <main id="login-view" class="login-view" hidden>
+    <div class="login-shell">
+      <div class="login-monogram proposed-mark"><img src="zeus-royal-mark.png" alt="ZEUS royal mark"></div>
+      <p class="eyebrow" data-i18n="accountAccess">ACCOUNT ACCESS</p>
+      <h1 data-i18n="welcomeToZeus">Welcome to ZEUS</h1>
+      <p class="login-lead muted" id="login-subtitle" data-i18n="signInMozilla">Sign in with your Mozilla account</p>
+      <div class="login-divider"><span></span><i></i><span></span></div>
+      <div class="form" id="login-form">
+        <div class="form-error" id="login-error" aria-live="polite"></div>
+        <div id="login-direct" hidden>
+          <label class="field"><span class="field-label" data-i18n="email">Email</span><input type="email" id="login-email" placeholder="Email" autocomplete="email" inputmode="email"></label>
+          <label class="field"><span class="field-label" data-i18n="password">Password</span><input type="password" id="login-password" placeholder="Password" autocomplete="current-password"></label>
+          <input class="code-input" type="text" id="login-code" placeholder="Verification code" hidden>
+          <button class="btn primary" type="button" id="login-direct-go"><span data-i18n="signIn">Sign in</span><svg viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6"/></svg></button>
         </div>
-        <button class="btn ghost" id="btn-choose-apps"><svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M11 18h2"/></svg>Choose apps <span class="apps-count" id="apps-count"></span></button>
+        <button class="btn primary" type="button" id="login-web"><span data-i18n="signInWithFirefox">Sign in with Firefox</span><svg viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6"/></svg></button>
+        <button class="btn secondary" type="button" id="login-cancel" hidden data-i18n="cancel">Cancel</button>
+        <p class="muted small center" id="login-hint" data-i18n="loginHint">The Mozilla sign-in page opens inside this window.</p>
       </div>
-      <div class="group-label">Anti-filtering</div>
-      <div class="input-row"><span><b>TLS fragmentation</b><small>Hides server names from SNI filtering</small></span>
-        <select id="set-tls-split">
-          <option value="auto">Auto</option>
-          <option value="sni">Always (SNI)</option>
-          <option value="first_byte">First byte</option>
-          <option value="off">Off</option>
-        </select>
+      <div class="login-foot">
+        <p class="muted small" data-i18n="freeMozilla">Free with any Mozilla account · 50 GB per month</p>
+        <a href="#" id="link-signup" data-i18n="createAccount">Create a free account</a>
       </div>
-      <div class="group-label">App</div>
-      <label class="toggle-row"><span><b>Connect on launch</b><small>Reconnect automatically</small></span><input type="checkbox" id="set-autoconnect"><i></i></label>
-      <label class="toggle-row"><span><b>Start with Windows</b><small>Launch minimized at sign-in</small></span><input type="checkbox" id="set-autostart"><i></i></label>
-      <div class="input-row"><span><b>Local proxy port</b><small>HTTP + SOCKS5 for other apps</small></span><input type="number" id="set-port" min="1024" max="65535"></div>
-      <div class="group-label">Troubleshooting</div>
-      <div class="btn-row">
-        <button class="btn ghost" id="btn-logs">View logs</button>
-        <button class="btn ghost" id="btn-logfile">Open log file</button>
-      </div>
-      <p class="about muted small" id="about"></p>
     </div>
-  </section>
+  </main>
 
-  <section class="sheet" id="sheet-apps" hidden>
-    <div class="sheet-head">
-      <h3>Choose apps</h3>
-      <button class="icon-btn" data-close title="Done"><svg viewBox="0 0 24 24"><path d="m5 13 4 4L19 7"/></svg></button>
+  <div id="app-shell" class="app-shell" hidden>
+    <aside class="sidebar" data-i18n-aria="primaryNavigation" aria-label="Primary navigation">
+      <div class="sidebar-brand">
+        <img class="royal-brand-mark" src="zeus-royal-mark.png" alt="ZEUS royal mark">
+        <div><b>ZEUS</b><span>VPN</span></div>
+      </div>
+      <div class="sidebar-caption" data-i18n="navigation">NAVIGATION</div>
+      <nav class="desktop-nav" id="desktop-nav">
+        <button class="nav-link active" data-screen="home" type="button"><svg viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20H4Z"/><path d="M9 20v-6h6v6"/></svg><span data-i18n="commandCenter">Command Center</span><i></i></button>
+        <button class="nav-link" data-screen="locations" type="button"><svg viewBox="0 0 24 24"><path d="M12 21s7-6.1 7-12A7 7 0 0 0 5 9c0 5.9 7 12 7 12Z"/><circle cx="12" cy="9" r="2.3"/></svg><span data-i18n="locations">Locations</span><i></i></button>
+        <button class="nav-link" data-screen="statistics" type="button"><svg viewBox="0 0 24 24"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg><span data-i18n="statistics">Statistics</span><i></i></button>
+        <button class="nav-link" data-screen="activity" type="button"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg><span data-i18n="activity">Activity</span><i></i></button>
+        <button class="nav-link" data-screen="settings" type="button"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg><span data-i18n="settings">Settings</span><i></i></button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="sidebar-footer-line"></div>
+        <span data-i18n="protectedByMozilla">Protected by Mozilla</span>
+        <small id="sidebar-version"></small>
+      </div>
+    </aside>
+
+    <div class="workspace-shell">
+      <header class="workspace-header">
+        <div class="mobile-brand"><img class="royal-brand-mark" src="zeus-royal-mark.png" alt="ZEUS royal mark"><b>ZEUS</b><span>VPN</span></div>
+        <div class="workspace-breadcrumb"><span class="breadcrumb-kicker">ZEUS VPN</span><span class="breadcrumb-divider">/</span><strong id="breadcrumb-title">Command Center</strong></div>
+        <div class="workspace-actions">
+          <button class="account-chip" id="btn-account" type="button" title="Account">
+            <span class="avatar" id="avatar">Z</span><span class="account-email" id="account-email"></span><span class="acct-count" id="acct-count" hidden></span>
+          </button>
+          <button class="icon-btn" id="btn-settings" type="button" data-i18n-title="settings" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></button>
+        </div>
+      </header>
+
+      <main class="workspace" id="workspace">
+        <!-- HOME / COMMAND CENTER -->
+        <section class="screen screen-home" id="screen-home" data-screen="home">
+          <div class="screen-heading home-heading">
+            <div><p class="eyebrow" data-i18n="commandCenterEyebrow">COMMAND CENTER</p><h1 data-i18n="commandCenterTitle">Your protection, at a glance.</h1><p class="screen-lead" data-i18n="commandCenterLead">A clear view of the connection that protects your digital life.</p></div>
+            <div class="heading-status"><span class="status-dot"></span><span id="home-connection-label" data-i18n="stateDisconnected">Disconnected</span></div>
+          </div>
+
+          <div class="home-grid">
+            <section class="surface connection-stage">
+              <div class="stage-ornament stage-ornament-left"></div><div class="stage-ornament stage-ornament-right"></div>
+              <div class="stage-header"><span class="eyebrow" data-i18n="connectionState">CONNECTION STATE</span><span class="stage-mode" id="status-mode">SYSTEM PROXY</span></div>
+              <div class="command-wrap">
+                <div class="command-halo"></div>
+                <button class="connection-command" id="orb" data-status="disconnected" type="button" aria-label="Connect" aria-describedby="status-text status-sub">
+                  <span class="command-frame"></span><span class="command-mark"><img class="command-emblem" src="zeus-connection-emblem.png" alt=""></span><span class="command-label" id="command-label" data-i18n="connect">Connect</span>
+                </button>
+              </div>
+              <div class="connection-copy" role="status" aria-live="polite" aria-atomic="true"><h2 id="status-text" data-i18n="stateDisconnected">Not connected</h2><p id="status-sub" data-i18n="tapToConnect">Choose a location, then establish protection.</p><span class="session-clock" id="session-clock"></span></div>
+              <div class="stage-footer"><span class="stage-footer-line"></span><span data-i18n="actualStateOnly">Actual network state only</span><span class="stage-footer-line"></span></div>
+            </section>
+
+            <div class="home-side">
+              <div class="banner" id="banner" role="status" aria-live="polite" hidden></div>
+              <section class="surface route-card">
+                <div class="surface-heading"><div><p class="eyebrow" data-i18n="protectedRoute">PROTECTED ROUTE</p><h2 data-i18n="selectedLocation">Selected location</h2></div><button class="text-action" id="btn-location" type="button"><span data-i18n="change">Change</span><svg viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6"/></svg></button></div>
+                <div class="route-value"><span class="flag" id="loc-flag"></span><div><strong id="loc-name">Recommended</strong><small id="loc-ping" class="ping" hidden></small></div></div>
+                <div class="route-meta"><span data-i18n="connectionMode">Connection mode</span><b id="home-route-mode">System Proxy</b></div>
+                <div class="route-meta"><span data-i18n="exitIp">Exit IP</span><b class="technical-value" id="exit-ip">—</b></div>
+              </section>
+
+              <section class="surface quota-card">
+                <div class="surface-heading"><div><p class="eyebrow" data-i18n="accountQuota">ACCOUNT QUOTA</p><h2 data-i18n="monthlyData">Monthly data</h2></div><span class="quota-seal">GB</span></div>
+                <div class="quota-value" id="quota-text">—</div>
+                <div class="quota-bar"><span id="quota-fill"></span></div>
+                <div class="quota-meta"><span data-i18n="remaining">Remaining</span><span id="total-row" hidden><span data-i18n="allAccounts">All accounts</span> · <b id="total-text">—</b></span></div>
+              </section>
+            </div>
+
+            <section class="surface activity-card">
+              <div class="surface-heading"><div><p class="eyebrow" data-i18n="liveTraffic">LIVE TRAFFIC</p><h2 data-i18n="currentSession">Current session</h2></div><button class="text-action" data-screen="statistics" type="button"><span data-i18n="openObservatory">Open observatory</span><svg viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6"/></svg></button></div>
+              <div class="metric-row">
+                <div class="metric"><span class="metric-icon download"><svg viewBox="0 0 24 24"><path d="M12 4v14M6 12l6 6 6-6"/></svg></span><div><span class="metric-label" data-i18n="download">Download</span><strong id="rate-down">0 B/s</strong><small id="total-down">Current session · 0 B</small></div></div>
+                <div class="metric"><span class="metric-icon upload"><svg viewBox="0 0 24 24"><path d="M12 20V6M6 12l6-6 6 6"/></svg></span><div><span class="metric-label" data-i18n="upload">Upload</span><strong id="rate-up">0 B/s</strong><small id="total-up">Current session · 0 B</small></div></div>
+                <div class="metric metric-total"><span class="metric-label" data-i18n="sessionTotal">Session total</span><strong id="home-session-total">0 B</strong><small data-i18n="liveOneSecond">Live · one-second samples</small></div>
+              </div>
+            </section>
+          </div>
+
+          <section class="surface mode-card">
+            <div><p class="eyebrow" data-i18n="protectionMode">PROTECTION MODE</p><h2 data-i18n="chooseTrafficRoute">Choose how traffic leaves this device.</h2></div>
+            <div class="segmented" id="mode-switch"><button data-mode="proxy" type="button"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg><span data-i18n="systemProxy">System Proxy</span></button><button data-mode="tun" type="button"><svg viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6Z"/></svg><span data-i18n="fullVpn">Full VPN</span></button><span class="seg-indicator"></span></div>
+          </section>
+        </section>
+
+        <!-- LOCATIONS -->
+        <section class="screen" id="screen-locations" data-screen="locations" hidden>
+          <div class="screen-heading"><div><p class="eyebrow" data-i18n="locationsEyebrow">NETWORK ATLAS</p><h1 data-i18n="locationsTitle">Choose your location.</h1><p class="screen-lead" data-i18n="locationsLead">Select a real server route. Latency is measured only when requested.</p></div><button class="btn secondary compact" id="btn-ping" type="button"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span data-i18n="measureLatency">Measure latency</span></button></div>
+          <div class="atlas-toolbar"><label class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="server-search" data-i18n-placeholder="searchLocations" placeholder="Search countries or cities"></label><span class="toolbar-note" data-i18n="serverDataActual">Server data from the application</span></div>
+          <div class="server-list atlas-list" id="server-list"></div>
+        </section>
+
+        <!-- STATISTICS / NETWORK OBSERVATORY -->
+        <section class="screen" id="screen-statistics" data-screen="statistics" hidden>
+          <div class="screen-heading"><div><p class="eyebrow" data-i18n="statisticsEyebrow">NETWORK OBSERVATORY</p><h1 data-i18n="statisticsTitle">See what ZEUS is carrying.</h1><p class="screen-lead" data-i18n="statisticsLead">Live, current-session measurements from the existing tunnel.</p></div><span class="data-badge"><i></i><span data-i18n="liveSession">LIVE SESSION</span></span></div>
+          <div class="observatory-grid">
+            <section class="surface observatory-core"><div class="surface-heading"><div><p class="eyebrow" data-i18n="sessionTraffic">SESSION TRAFFIC</p><h2 id="stats-session-state" data-i18n="notConnected">No active session</h2></div><span class="technical-label" id="stats-live-label" data-i18n="oneSecondSamples">1s samples</span></div><div class="observatory-total"><span id="stats-total">0 B</span><small data-i18n="combinedTraffic">Combined traffic</small></div><div class="chart-wrap"><svg id="live-chart" viewBox="0 0 720 220" role="img" data-i18n-aria="liveChart" aria-label="Live session traffic chart"><path class="chart-grid-line" d="M0 40H720M0 90H720M0 140H720M0 190H720"/><path id="chart-area" class="chart-area" hidden></path><path id="chart-line" class="chart-line" hidden></path></svg><div class="chart-empty" id="chart-empty"><span class="empty-mark">◆</span><span data-i18n="chartAwaiting">Live samples will appear when the tunnel is active.</span></div></div><div class="chart-legend"><span><i class="legend-down"></i><span data-i18n="downloadRate">Download rate</span><b id="stats-down-rate">0 B/s</b></span><span><i class="legend-up"></i><span data-i18n="uploadRate">Upload rate</span><b id="stats-up-rate">0 B/s</b></span></div></section>
+            <div class="observatory-side"><section class="surface stat-panel"><p class="eyebrow" data-i18n="currentSession">CURRENT SESSION</p><div class="stat-panel-row"><span data-i18n="download">Download</span><strong id="stats-down">0 B</strong></div><div class="stat-panel-row"><span data-i18n="upload">Upload</span><strong id="stats-up">0 B</strong></div><div class="stat-panel-row emphasis"><span data-i18n="quotaRemaining">Quota remaining</span><strong id="stats-quota">—</strong></div><div class="quota-bar"><span id="stats-quota-fill"></span></div></section><section class="surface limitation-panel"><span class="panel-mark">i</span><div><p class="eyebrow" data-i18n="historyBoundary">HISTORY BOUNDARY</p><h2 data-i18n="historyUnavailable">Historical time series unavailable</h2><p data-i18n="historyUnavailableDetail">This version exposes live session samples and recorded destinations, not daily, weekly or monthly buckets.</p></div></section></div>
+          </div>
+          <section class="surface destination-panel"><div class="surface-heading"><div><p class="eyebrow" data-i18n="recordedDestinations">RECORDED DESTINATIONS</p><h2 data-i18n="whereTrafficWent">Where recorded traffic went.</h2></div><span class="technical-label" data-i18n="retainedUsage">Retained usage data</span></div><p class="panel-note" id="stats-usage-note" data-i18n="destinationNote">Cumulative destination totals with last activity, not a time-series history.</p><div class="destination-list" id="stats-destinations"></div></section>
+          <section class="surface platform-apps-panel" id="stats-apps" hidden><div class="surface-heading"><div><p class="eyebrow" data-i18n="windowsApplications">WINDOWS APPLICATIONS</p><h2 data-i18n="applicationTraffic">Application traffic</h2></div><span class="technical-label" data-i18n="windowsOnly">Windows only</span></div><div class="destination-list" id="stats-apps-list"></div></section>
+        </section>
+
+        <!-- ACTIVITY -->
+        <section class="screen" id="screen-activity" data-screen="activity" hidden>
+          <div class="screen-heading"><div><p class="eyebrow" data-i18n="activityEyebrow">ACTIVITY LEDGER</p><h1 data-i18n="activityTitle">A factual record of the application.</h1><p class="screen-lead" data-i18n="activityLead">Logs, notices and retained destination usage — without invented history.</p></div><button class="btn secondary compact" id="btn-copy-logs" type="button"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span data-i18n="copyLogs">Copy logs</span></button></div>
+          <div class="activity-grid"><section class="surface activity-logs"><div class="surface-heading"><div><p class="eyebrow" data-i18n="applicationLogs">APPLICATION LOGS</p><h2 data-i18n="diagnosticRecord">Diagnostic record</h2></div><button class="text-action" id="btn-logfile" type="button" data-i18n="openLogFile">Open log file</button></div><div class="logs" id="logs"><div class="list-msg" data-i18n="logsEmpty">Open logs to load the current diagnostic record.</div></div></section><section class="surface activity-usage"><div class="surface-heading"><div><p class="eyebrow" data-i18n="retainedUsage">RETAINED USAGE</p><h2 data-i18n="destinationUsage">Destination usage</h2></div><button class="icon-btn danger-icon" id="btn-usage-reset" data-i18n-title="clearHistory" title="Clear history" aria-label="Clear history"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div><div class="usage-summary"><div><span data-i18n="download">Download</span><b id="activity-usage-total-down">—</b></div><div><span data-i18n="upload">Upload</span><b id="activity-usage-total-up">—</b></div><div><span data-i18n="total">Total</span><b id="activity-usage-total">—</b></div></div><label class="search compact-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="activity-usage-search" data-i18n-placeholder="searchDestinations" placeholder="Search destinations"></label><div class="destination-list usage-list" id="activity-usage-list"></div></section></div>
+        </section>
+
+        <!-- SETTINGS -->
+        <section class="screen" id="screen-settings" data-screen="settings" hidden>
+          <div class="screen-heading"><div><p class="eyebrow" data-i18n="settingsEyebrow">CONTROL ROOM</p><h1 data-i18n="settingsTitle">Shape the way ZEUS protects you.</h1><p class="screen-lead" data-i18n="settingsLead">Connection, routing, startup and appearance preferences.</p></div></div>
+          <div class="settings-layout">
+            <div class="settings-main">
+              <section class="settings-section"><div class="section-heading"><p class="eyebrow" data-i18n="accounts">ACCOUNTS</p><h2 data-i18n="accountsTitle">Mozilla accounts</h2></div><div class="accounts" id="account-list"></div><button class="btn secondary" id="btn-add-account" type="button"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span data-i18n="addAccount">Add another account</span></button></section>
+              <section class="settings-section"><div class="section-heading"><p class="eyebrow" data-i18n="connection">CONNECTION</p><h2 data-i18n="connectionSettings">Connection behavior</h2></div><label class="toggle-row"><span><b data-i18n="autoConnect">Connect on launch</b><small data-i18n="autoConnectDetail">Reconnect automatically when ZEUS starts.</small></span><input type="checkbox" id="set-autoconnect"><i></i></label><label class="toggle-row"><span><b data-i18n="autoSwitch">Auto-switch accounts</b><small data-i18n="autoSwitchDetail">Use the next account when one runs out of data.</small></span><input type="checkbox" id="set-autoswitch"><i></i></label><label class="toggle-row"><span><b id="autostart-label" data-i18n="startAtLogin">Start at login</b><small data-i18n="autostartDetail">Launch ZEUS automatically when you sign in.</small></span><input type="checkbox" id="set-autostart"><i></i></label><label class="toggle-row" id="kill-switch-row"><span><b data-i18n="killSwitch">Kill switch</b><small data-i18n="killSwitchDetail">Block traffic if the VPN drops until it reconnects or you disconnect.</small></span><input type="checkbox" id="set-killswitch"><i></i></label></section>
+              <section class="settings-section"><div class="section-heading"><p class="eyebrow" data-i18n="routing">ROUTING</p><h2 data-i18n="routingSettings">Traffic boundaries</h2></div><label class="toggle-row"><span><b data-i18n="bypassIran">Bypass Iranian sites</b><small data-i18n="bypassIranDetail">.ir domains connect directly.</small></span><input type="checkbox" id="set-bypass-ir"><i></i></label><label class="toggle-row"><span><b data-i18n="bypassLan">Bypass local network</b><small data-i18n="bypassLanDetail">Printers, routers and LAN stay direct.</small></span><input type="checkbox" id="set-bypass-lan"><i></i></label><div class="app-filter" id="app-filter" hidden><div class="subsection-heading"><span id="group-appfilter" data-i18n="fullVpnApps">FULL VPN APPS</span></div><div class="seg3" id="set-apptunnel"><button data-mode="all" type="button" data-i18n="allApps">All apps</button><button data-mode="include" type="button" data-i18n="selectedOnly">Selected only</button><button data-mode="exclude" type="button" data-i18n="exceptSelected">Except selected</button></div><button class="btn secondary" id="btn-choose-apps" type="button"><svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M11 18h2"/></svg><span data-i18n="chooseApps">Choose apps</span><span class="apps-count" id="apps-count"></span></button></div></section>
+              <section class="settings-section"><div class="section-heading"><p class="eyebrow" data-i18n="antiFiltering">ANTI-FILTERING</p><h2 data-i18n="antiFilteringSettings">Transport detail</h2></div><div class="input-row"><span><b data-i18n="tlsFragmentation">TLS fragmentation</b><small data-i18n="tlsFragmentationDetail">Hides server names from SNI filtering.</small></span><select id="set-tls-split"><option value="auto" data-i18n="tlsAuto">Auto</option><option value="sni" data-i18n="tlsAlways">Always (SNI)</option><option value="first_byte" data-i18n="tlsFirstByte">First byte</option><option value="off" data-i18n="tlsOff">Off</option></select></div><div class="input-row"><span><b data-i18n="localProxyPort">Local proxy port</b><small data-i18n="localProxyPortDetail">HTTP + SOCKS5 for other apps.</small></span><input type="number" id="set-port" min="1024" max="65535"></div></section>
+            </div>
+            <aside class="settings-aside"><section class="surface settings-aside-card"><p class="eyebrow" data-i18n="appearance">APPEARANCE</p><h2 data-i18n="appearanceTitle">A quieter command center.</h2><label class="input-row"><span><b data-i18n="language">Language</b><small data-i18n="languageDetail">Choose the interface direction.</small></span><select id="set-language"><option value="en" data-i18n="english">English</option><option value="fa" data-i18n="persian">فارسی</option></select></label><label class="toggle-row"><span><b data-i18n="visualEffects">Atmospheric effects</b><small data-i18n="visualEffectsDetail">Reduce movement and decorative lighting.</small></span><input type="checkbox" id="set-effects"><i></i></label></section><section class="surface settings-aside-card"><p class="eyebrow" data-i18n="troubleshooting">TROUBLESHOOTING</p><h2 data-i18n="diagnosticsTitle">Diagnostics</h2><button class="btn secondary full" id="btn-logs" type="button"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg><span data-i18n="viewLogs">View logs</span></button><button class="btn secondary full" id="btn-usage" type="button"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg><span data-i18n="openStatistics">Open statistics</span></button><p class="about muted small" id="about"></p></section></aside>
+          </div>
+        </section>
+      </main>
+
+      <nav class="mobile-nav" id="mobile-nav" data-i18n-aria="mobileNavigation" aria-label="Mobile navigation">
+        <button class="nav-link active" data-screen="home" type="button"><svg viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20H4Z"/><path d="M9 20v-6h6v6"/></svg><span data-i18n="home">Home</span></button>
+        <button class="nav-link" data-screen="locations" type="button"><svg viewBox="0 0 24 24"><path d="M12 21s7-6.1 7-12A7 7 0 0 0 5 9c0 5.9 7 12 7 12Z"/><circle cx="12" cy="9" r="2.3"/></svg><span data-i18n="locations">Locations</span></button>
+        <button class="nav-link" data-screen="statistics" type="button"><svg viewBox="0 0 24 24"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg><span data-i18n="statistics">Statistics</span></button>
+        <button class="nav-link" data-screen="activity" type="button"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg><span data-i18n="activity">Activity</span></button>
+        <button class="nav-link" data-screen="settings" type="button"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg><span data-i18n="settings">Settings</span></button>
+      </nav>
     </div>
-    <label class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="app-search" placeholder="Search apps"></label>
+  </div>
+
+  <!-- Android app picker remains a focused panel because it is a task inside Routing. -->
+  <div class="panel-scrim" id="panel-scrim" hidden></div>
+  <section class="modal-panel" id="panel-apps" hidden aria-modal="true" role="dialog" aria-labelledby="apps-panel-title">
+    <div class="panel-head"><div><p class="eyebrow" data-i18n="fullVpnApps">FULL VPN APPS</p><h2 id="apps-panel-title" data-i18n="chooseApps">Choose apps</h2></div><button class="icon-btn" id="btn-close-apps" type="button" data-i18n-title="close" title="Close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+    <label class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="app-search" data-i18n-placeholder="searchApps" placeholder="Search apps"></label>
     <div class="server-list" id="app-list"></div>
   </section>
 
-  <section class="sheet" id="sheet-usage" hidden>
-    <div class="sheet-head">
-      <h3>Data usage</h3>
-      <button class="icon-btn" id="btn-usage-reset" title="Clear history"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
-      <button class="icon-btn" data-close title="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
-    </div>
-    <div class="usage-summary">
-      <div><span class="muted small">Download</span><b id="usage-total-down">—</b></div>
-      <div><span class="muted small">Upload</span><b id="usage-total-up">—</b></div>
-      <div><span class="muted small">Total</span><b id="usage-total">—</b></div>
-    </div>
-    <p class="usage-note muted small" id="usage-note">Where the VPN data went, latest month. Only traffic through the VPN servers counts.</p>
-    <label class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="usage-search" placeholder="Search destination"></label>
-    <div class="server-list" id="usage-list"></div>
-  </section>
-
-  <section class="sheet" id="sheet-logs" hidden>
-    <div class="sheet-head">
-      <h3>Logs</h3>
-      <button class="icon-btn" id="btn-copy-logs" title="Copy"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
-      <button class="icon-btn" data-close title="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
-    </div>
-    <div class="logs" id="logs"></div>
-  </section>
-
-  <div class="modal" id="modal-confirm" hidden>
-    <div class="modal-card">
-      <h3 id="confirm-title">Are you sure?</h3>
-      <p class="muted" id="confirm-message"></p>
-      <div class="btn-row">
-        <button class="btn primary" id="btn-confirm-yes">Yes</button>
-        <button class="btn ghost" id="btn-confirm-no">Cancel</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="modal" id="modal-admin" hidden>
-    <div class="modal-card">
-      <div class="modal-icon"><svg viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6Z"/><path d="M12 8v5M12 16h.01"/></svg></div>
-      <h3>Administrator needed</h3>
-      <p class="muted" id="admin-reason">Full VPN mode creates a virtual network adapter so every app is protected. Windows requires administrator permission for that.</p>
-      <button class="btn primary" id="btn-elevate">Restart as administrator</button>
-      <button class="btn ghost" id="btn-use-proxy">Use System Proxy instead</button>
-    </div>
-  </div>
-
+  <!-- Dialogs preserve the native/API operations used by the existing app. -->
+  <div class="modal" id="modal-confirm" hidden><div class="modal-card"><div class="modal-mark">◆</div><p class="eyebrow" data-i18n="confirmation">CONFIRMATION</p><h3 id="confirm-title">Are you sure?</h3><p class="muted" id="confirm-message"></p><div class="btn-row"><button class="btn primary" id="btn-confirm-yes" data-i18n="confirm">Confirm</button><button class="btn secondary" id="btn-confirm-no" data-i18n="cancel">Cancel</button></div></div></div>
+  <div class="modal" id="modal-admin" hidden><div class="modal-card"><div class="modal-mark gold">◆</div><p class="eyebrow" data-i18n="elevatedAccess">ELEVATED ACCESS</p><h3 data-i18n="administratorNeeded">Administrator needed</h3><p class="muted" id="admin-reason"></p><button class="btn primary" id="btn-elevate" data-i18n="restartAsAdmin">Restart as administrator</button><button class="btn secondary" id="btn-use-proxy" data-i18n="useSystemProxy">Use System Proxy instead</button></div></div>
   <div class="toast" id="toast" hidden></div>
 
   <script src="bridge.js"></script>

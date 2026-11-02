@@ -501,12 +501,18 @@ func (e *Engine) connect(ctx context.Context, st store.Settings) error {
 	if err != nil {
 		return err
 	}
-	cands := mozilla.OrderHealthy(mozilla.Candidates(countries, st.CountryCode, st.CityCode))
+	// "Recommended" is stored as an empty country: it means the REC
+	// pseudo-country of Mozilla's list (the old PickEndpoint mapped it).
+	cc := st.CountryCode
+	if cc == "" {
+		cc = mozilla.RecommendedCode
+	}
+	cands := mozilla.OrderHealthy(mozilla.Candidates(countries, cc, st.CityCode))
 	if len(cands) == 0 && st.CityCode != "" {
-		cands = mozilla.OrderHealthy(mozilla.Candidates(countries, st.CountryCode, ""))
+		cands = mozilla.OrderHealthy(mozilla.Candidates(countries, cc, ""))
 	}
 	if len(cands) == 0 {
-		return fmt.Errorf("no available servers for %s", st.CountryCode)
+		return fmt.Errorf("no available servers for %s", cc)
 	}
 
 	var tun TunDriver

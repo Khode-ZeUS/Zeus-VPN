@@ -270,7 +270,11 @@ func (e *Engine) Servers(force bool) ([]mozilla.Country, error) {
 		}
 	}
 	if err != nil {
-		return nil, err
+		// Every path failed: Mozilla's recommended server itself stays
+		// reachable as a last resort, so a connect is always possible —
+		// the health machinery and failover take it from there.
+		list = mozilla.FallbackServerList()
+		e.Log("warning", "no bootstrap path worked, falling back to the built-in recommended server")
 	}
 	store.SaveJSON("servers.json", list)
 	e.mu.Lock()

@@ -73,6 +73,23 @@ func (s Server) connectTarget() (string, int, bool) {
 // the server list through the tunnel when the list host is unreachable.
 var BootstrapEndpoint = Endpoint{Host: "p.m1.fastly-masque.net", Port: 2499, CountryCode: RecommendedCode}
 
+// FallbackServerList is the minimal list used when every bootstrap path
+// fails: Mozilla's recommended server itself, so a connect attempt is
+// always possible.
+func FallbackServerList() []Country {
+	return []Country{{
+		Name: "Recommended", Code: RecommendedCode,
+		Cities: []City{{
+			Name: "Recommended", Code: RecommendedCode,
+			Servers: []Server{{
+				Hostname:  BootstrapEndpoint.Host,
+				Port:      BootstrapEndpoint.Port,
+				Protocols: []Protocol{{Name: "connect", Host: BootstrapEndpoint.Host, Port: BootstrapEndpoint.Port}},
+			}},
+		}},
+	}}
+}
+
 func FetchServerList() ([]Country, error) {
 	return FetchServerListWith(Client())
 }

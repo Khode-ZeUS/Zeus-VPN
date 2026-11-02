@@ -139,6 +139,7 @@ func fxaDo(method, path, sessionToken string, payload any) (map[string]any, erro
 	}
 	var resp *http.Response
 	var respBody []byte
+	var lastNetErr error
 	for attempt := 0; attempt < maxChallengeAttempts; attempt++ {
 		req, _ := http.NewRequest(method, u.String(), bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -154,7 +155,18 @@ func fxaDo(method, path, sessionToken string, payload any) (map[string]any, erro
 		var err error
 		resp, err = c.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("could not reach Firefox Accounts: %w", err)
+			if req.Context().Err() != nil {
+				return nil, fmt.Errorf("could not reach Firefox Accounts: %w", err)
+			}
+			// A transient network cut (handshake timeout, reset): drop the
+			// pooled connections and send the request again — the loop
+			// rebuilds it (and the Hawk header) each round, and the
+			// transport retries a cut handshake fragmented.
+			lastNetErr = err
+			resp, respBody = nil, nil
+			ResetConnections()
+			time.Sleep(700 * time.Millisecond)
+			continue
 		}
 		respBody = readBody(resp, 1<<20)
 		resp.Body.Close()
@@ -172,6 +184,9 @@ func fxaDo(method, path, sessionToken string, payload any) (map[string]any, erro
 			}
 			return nil, fmt.Errorf("Mozilla anti-bot check failed: %w", err)
 		}
+	}
+	if resp == nil {
+		return nil, fmt.Errorf("could not reach Firefox Accounts: %w", lastNetErr)
 	}
 	if resp.StatusCode == 406 {
 		return nil, &FxaError{

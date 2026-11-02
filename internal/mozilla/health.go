@@ -56,14 +56,9 @@ func MarkEndpointFail(addr string) {
 	s.lastFail = time.Now()
 }
 
-// PickHealthyEndpoint picks a server from the candidates: recent failures
-// go last, working servers are ordered by their last known latency, and
-// the choice among the best few is random. With no health knowledge (a
-// fresh install) it degrades to the old uniform-random pick.
-func PickHealthyEndpoint(cands []Endpoint) Endpoint {
-	if len(cands) == 0 {
-		return Endpoint{}
-	}
+// OrderHealthy sorts the candidates by endpoint health: recent failures
+// last, working servers by their last known latency, then the rest.
+func OrderHealthy(cands []Endpoint) []Endpoint {
 	now := time.Now()
 	type scored struct {
 		ep    Endpoint
@@ -82,14 +77,30 @@ func PickHealthyEndpoint(cands []Endpoint) Endpoint {
 		}
 		good = append(good, scored{ep, ms + rand.Int64N(150)})
 	}
-	pool := good
-	if len(pool) == 0 {
-		pool = bad
+	sort.Slice(good, func(i, j int) bool { return good[i].score < good[j].score })
+	sort.Slice(bad, func(i, j int) bool { return bad[i].score < bad[j].score })
+	out := make([]Endpoint, 0, len(cands))
+	for _, s := range good {
+		out = append(out, s.ep)
 	}
-	sort.Slice(pool, func(i, j int) bool { return pool[i].score < pool[j].score })
+	for _, s := range bad {
+		out = append(out, s.ep)
+	}
+	return out
+}
+
+// PickHealthyEndpoint picks a server from the candidates: recent failures
+// go last, working servers are ordered by their last known latency, and
+// the choice among the best few is random. With no health knowledge (a
+// fresh install) it degrades to the old uniform-random pick.
+func PickHealthyEndpoint(cands []Endpoint) Endpoint {
+	if len(cands) == 0 {
+		return Endpoint{}
+	}
+	ordered := OrderHealthy(cands)
 	top := pickTopRandom
-	if len(pool) < top {
-		top = len(pool)
+	if len(ordered) < top {
+		top = len(ordered)
 	}
-	return pool[rand.IntN(top)].ep
+	return ordered[rand.IntN(top)]
 }

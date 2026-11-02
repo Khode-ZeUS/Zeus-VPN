@@ -501,11 +501,13 @@ func (e *Engine) connect(ctx context.Context, st store.Settings) error {
 	if err != nil {
 		return err
 	}
-	ep, err := mozilla.PickEndpoint(countries, st.CountryCode, st.CityCode)
-	if err != nil {
-		return err
+	cands := mozilla.OrderHealthy(mozilla.Candidates(countries, st.CountryCode, st.CityCode))
+	if len(cands) == 0 && st.CityCode != "" {
+		cands = mozilla.OrderHealthy(mozilla.Candidates(countries, st.CountryCode, ""))
 	}
-	e.Log("info", fmt.Sprintf("selected upstream proxy %s (%s)", ep.Addr(), ep.CountryCode))
+	if len(cands) == 0 {
+		return fmt.Errorf("no available servers for %s", st.CountryCode)
+	}
 
 	var tun TunDriver
 	if st.Mode == store.ModeTUN {
@@ -518,19 +520,46 @@ func (e *Engine) connect(ctx context.Context, st store.Settings) error {
 		}
 	}
 
-	up, err := tunnel.NewUpstream(ctx, ep.Host, ep.Port, pass.Token, e.onRejected)
-	if err != nil {
-		mozilla.MarkEndpointFail(ep.Addr())
-		return err
+	// Try up to three healthy servers: on networks that hijack the
+	// VPN-server handshake (a forged certificate), the first endpoint may
+	// be unreachable while the next one is not.
+	tried := 0
+	var up *tunnel.Upstream
+	var ep mozilla.Endpoint
+	var lastErr error
+	for _, cand := range cands {
+		if tried >= 3 {
+			break
+		}
+		tried++
+		ep = cand
+		e.Log("info", fmt.Sprintf("selected upstream proxy %s (%s)", ep.Addr(), ep.CountryCode))
+		up, lastErr = tunnel.NewUpstream(ctx, ep.Host, ep.Port, pass.Token, e.onRejected)
+		if lastErr != nil {
+			mozilla.MarkEndpointFail(ep.Addr())
+			continue
+		}
+		e.mu.Lock()
+		e.up = up
+		e.mu.Unlock()
+		if lastErr = up.Warmup(ctx); lastErr != nil {
+			mozilla.MarkEndpointFail(ep.Addr())
+			up.Close()
+			e.mu.Lock()
+			e.up = nil
+			e.mu.Unlock()
+			continue
+		}
+		mozilla.MarkEndpointOK(ep.Addr(), 0)
+		lastErr = nil
+		break
 	}
-	e.mu.Lock()
-	e.up = up
-	e.mu.Unlock()
-	if err := up.Warmup(ctx); err != nil {
-		mozilla.MarkEndpointFail(ep.Addr())
-		return err
+	if up == nil {
+		if lastErr == nil {
+			lastErr = errors.New("no VPN server accepted the connection")
+		}
+		return lastErr
 	}
-	mozilla.MarkEndpointOK(ep.Addr(), 0)
 	// From now on Mozilla's API can also be reached through the tunnel.
 	mozilla.SetTunnel(up.Dial)
 	e.Log("info", "upstream transport=http2")

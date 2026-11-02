@@ -439,6 +439,13 @@ func (a *App) NetworkDiagnostics() []netdiag.Event {
 	return netdiag.Snapshot()
 }
 
+// ResetNetworkConfig forgets the learned network choices (which bootstrap
+// path worked where) and the recorded diagnostics.
+func (a *App) ResetNetworkConfig() {
+	netdiag.Clear()
+	a.eng.ResetNetworkConfig()
+}
+
 func active(st string) bool {
 	return st == core.StatusConnected || st == core.StatusReconnecting
 }

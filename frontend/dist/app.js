@@ -303,6 +303,7 @@ function render() {
   $("#set-autoswitch").checked = snap.settings.auto_switch;
   $("#set-killswitch").checked = snap.settings.kill_switch;
   $("#set-tls-split").value = snap.settings.tls_split || "auto";
+  if (document.activeElement !== $("#set-upstream")) $("#set-upstream").value = snap.settings.upstream_proxy || "";
   $("#set-autostart").checked = snap.autostart;
   // Per-app tunnelling (Android): reflect the saved mode and selection.
   appMode = snap.settings.app_tunnel_mode || "all";
@@ -713,6 +714,7 @@ function wire() {
     s.kill_switch = $("#set-killswitch").checked;
     s.tls_split = $("#set-tls-split").value;
     s.proxy_port = parseInt($("#set-port").value, 10) || s.proxy_port;
+    s.upstream_proxy = $("#set-upstream").value.trim();
     try {
       await api().SaveSettings(s);
       await refreshSnapshot();
@@ -723,6 +725,30 @@ function wire() {
   };
   for (const id of ["#set-bypass-ir", "#set-bypass-lan", "#set-autoconnect", "#set-autoswitch", "#set-tls-split", "#set-killswitch"]) $(id).onchange = saveSettings;
   $("#set-port").onchange = saveSettings;
+  $("#set-upstream").onchange = saveSettings;
+
+  $("#btn-net-diag").onclick = async () => {
+    const box = $("#net-diag");
+    box.hidden = false;
+    box.textContent = "Collecting…";
+    try {
+      const evs = await api().NetworkDiagnostics();
+      box.textContent = evs.length
+        ? evs.slice(-24).map((e) => `${e.stage.padEnd(5)} ${String(e.ms).padStart(6)}ms  ${e.code.padEnd(19)} ${e.target}`).join("\n")
+        : "No connections recorded yet.";
+    } catch (e) {
+      box.textContent = errText(e);
+    }
+  };
+  $("#btn-net-reset").onclick = async () => {
+    try {
+      await api().ResetNetworkConfig();
+      $("#net-diag").hidden = true;
+      toast("Network settings were reset");
+    } catch (e) {
+      toast(errText(e));
+    }
+  };
 
   for (const b of $$("#set-apptunnel button")) {
     b.onclick = async () => {

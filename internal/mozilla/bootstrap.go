@@ -185,3 +185,16 @@ func (b *Bootstrap) remember(sig, path string, err error) {
 	}
 	store.SaveJSON(bootstrapStateFile, b.mem)
 }
+
+// Reset forgets the per-network memory (Reset Network Configuration).
+func (b *Bootstrap) Reset() {
+	b.mu.Lock()
+	sig := b.opts.Sig()
+	b.mem = bootstrapMemory{Network: sig}
+	b.mu.Unlock()
+	if b.opts.Save != nil {
+		b.opts.Save(b.mem)
+		return
+	}
+	store.SaveJSON(bootstrapStateFile, b.mem)
+}

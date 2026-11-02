@@ -365,3 +365,12 @@ html.mobile input { user-select: text; -webkit-user-select: text; }
 }
 #login-direct input:focus { border-color: rgba(124, 92, 255, 0.55); }
 #login-direct input::placeholder { color: var(--muted); }
+
+/* Connection diagnostics list */
+.diag-list {
+  margin-top: 8px; padding: 10px 12px; border-radius: 10px;
+  background: var(--bg-2); border: 1px solid var(--border);
+  font: 11px/1.5 "Cascadia Mono", Consolas, monospace;
+  color: var(--muted); white-space: pre-wrap; overflow: hidden;
+  max-height: 40vh; overflow-y: auto; user-select: text;
+}

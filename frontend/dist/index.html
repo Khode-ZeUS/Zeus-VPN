@@ -139,7 +139,7 @@
         </div>
         <button class="btn ghost" id="btn-choose-apps"><svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M11 18h2"/></svg>Choose apps <span class="apps-count" id="apps-count"></span></button>
       </div>
-      <div class="group-label">Anti-filtering</div>
+      <div class="group-label" id="group-netcompat">Network compatibility</div>
       <div class="input-row"><span><b>TLS fragmentation</b><small>Hides server names from SNI filtering</small></span>
         <select id="set-tls-split">
           <option value="auto">Auto</option>
@@ -148,6 +148,12 @@
           <option value="off">Off</option>
         </select>
       </div>
+      <div class="input-row"><span><b>Upstream proxy</b><small>Reaches Mozilla when the direct path fails — socks5:// or http://</small></span><input type="text" id="set-upstream" placeholder="socks5://127.0.0.1:1080" spellcheck="false"></div>
+      <div class="btn-row">
+        <button class="btn ghost" id="btn-net-diag">Connection diagnostics</button>
+        <button class="btn ghost" id="btn-net-reset">Reset network settings</button>
+      </div>
+      <div class="diag-list" id="net-diag" hidden></div>
       <div class="group-label">App</div>
       <label class="toggle-row"><span><b>Connect on launch</b><small>Reconnect automatically</small></span><input type="checkbox" id="set-autoconnect"><i></i></label>
       <label class="toggle-row"><span><b>Start with Windows</b><small>Launch minimized at sign-in</small></span><input type="checkbox" id="set-autostart"><i></i></label>

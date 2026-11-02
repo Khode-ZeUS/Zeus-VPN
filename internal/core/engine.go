@@ -215,6 +215,12 @@ func (e *Engine) SaveSettings(s store.Settings) error {
 	return store.SaveSettings(s)
 }
 
+// ResetNetworkConfig forgets the learned network choices (which bootstrap
+// path worked where) — Reset Network Configuration in the settings.
+func (e *Engine) ResetNetworkConfig() {
+	e.boot.Load().Reset()
+}
+
 // fetchServersViaTunnel downloads the server list through Firefox's
 // recommended server, for networks that block the list host.
 func (e *Engine) fetchServersViaTunnel() ([]mozilla.Country, error) {

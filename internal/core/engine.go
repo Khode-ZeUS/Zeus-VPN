@@ -310,6 +310,11 @@ func (e *Engine) Latency() map[string]int {
 			defer wg.Done()
 			defer func() { <-sem }()
 			ms := probeLatency(j.ep)
+			if ms > 0 {
+				mozilla.MarkEndpointOK(j.ep.Addr(), int64(ms))
+			} else {
+				mozilla.MarkEndpointFail(j.ep.Addr())
+			}
 			mu.Lock()
 			out[j.key] = ms
 			mu.Unlock()
@@ -515,14 +520,17 @@ func (e *Engine) connect(ctx context.Context, st store.Settings) error {
 
 	up, err := tunnel.NewUpstream(ctx, ep.Host, ep.Port, pass.Token, e.onRejected)
 	if err != nil {
+		mozilla.MarkEndpointFail(ep.Addr())
 		return err
 	}
 	e.mu.Lock()
 	e.up = up
 	e.mu.Unlock()
 	if err := up.Warmup(ctx); err != nil {
+		mozilla.MarkEndpointFail(ep.Addr())
 		return err
 	}
+	mozilla.MarkEndpointOK(ep.Addr(), 0)
 	// From now on Mozilla's API can also be reached through the tunnel.
 	mozilla.SetTunnel(up.Dial)
 	e.Log("info", "upstream transport=http2")

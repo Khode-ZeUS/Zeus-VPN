@@ -3,7 +3,6 @@ package mozilla
 import (
 	"encoding/json"
 	"fmt"
-	"math/rand/v2"
 	"net/http"
 	"sort"
 	"strings"
@@ -148,6 +147,9 @@ func Candidates(countries []Country, countryCode, cityCode string) []Endpoint {
 	return out
 }
 
+// PickEndpoint picks a server for the country/city by endpoint health:
+// recent failures sit out, low-latency servers are preferred, with a
+// little randomness among the best few. See health.go.
 func PickEndpoint(countries []Country, countryCode, cityCode string) (Endpoint, error) {
 	if countryCode == "" {
 		countryCode = RecommendedCode
@@ -159,5 +161,5 @@ func PickEndpoint(countries []Country, countryCode, cityCode string) (Endpoint, 
 	if len(cands) == 0 {
 		return Endpoint{}, fmt.Errorf("no available servers for %s", countryCode)
 	}
-	return cands[rand.IntN(len(cands))], nil
+	return PickHealthyEndpoint(cands), nil
 }

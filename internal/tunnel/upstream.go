@@ -196,9 +196,15 @@ func (u *Upstream) newConn(ctx context.Context, ep endpoint) (*http2.ClientConn,
 	for _, ip := range ep.addrs {
 		wasBlocked := netx.HostBlocked(ep.host)
 		tc, err := u.handshake(ctx, ep, ip)
+		if err != nil && netx.IsCertVerifyError(err) {
+			// The network answered with a forged certificate — an SNI
+			// middlebox, not the real server. Hide the server name on the
+			// next attempt, exactly like a cut-off handshake.
+			netx.MarkBlocked(ep.host)
+		}
 		if err != nil && !wasBlocked && netx.HostBlocked(ep.host) && ctx.Err() == nil {
-			// The network cut off a plain handshake; retry with the server
-			// name fragmented.
+			// The network cut off a plain handshake (or forged its
+			// certificate); retry with the server name fragmented.
 			tc, err = u.handshake(ctx, ep, ip)
 		}
 		if err != nil {

@@ -166,6 +166,21 @@ func (v viaTunnel) RoundTrip(req *http.Request) (*http.Response, error) {
 		// chance before surfacing the block.
 		retryable = true
 	}
+	if err != nil && netx.IsCertVerifyError(err) {
+		// The network answered with a forged certificate — an SNI
+		// middlebox. Hide the server name and try the direct path once
+		// more before falling back to the tunnel or a system proxy.
+		netx.MarkBlocked(req.URL.Hostname())
+		if req.Context().Err() == nil {
+			if again, ok := replayableFresh(req); ok {
+				if resp2, err2 := v.direct.RoundTrip(again); err2 == nil {
+					return resp2, nil
+				} else if resp2 != nil {
+					resp2.Body.Close()
+				}
+			}
+		}
+	}
 	if !retryable {
 		return resp, err
 	}

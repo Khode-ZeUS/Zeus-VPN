@@ -1,7 +1,10 @@
 package netx
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/binary"
+	"errors"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -57,6 +60,20 @@ func HostBlocked(host string) bool {
 // Canada) is still probed with fragmentation, exactly like a real connection.
 func MarkBlocked(host string) {
 	blocked.Store(host, time.Now())
+}
+
+// IsCertVerifyError reports a TLS certificate verification failure — on
+// filtered networks, typically a middlebox answering with a forged
+// certificate for the host it saw in the plain ClientHello. The next
+// attempt should hide the server name, so callers pair this with
+// MarkBlocked.
+func IsCertVerifyError(err error) bool {
+	var certErr *tls.CertificateVerificationError
+	if errors.As(err, &certErr) {
+		return true
+	}
+	var unknown x509.UnknownAuthorityError
+	return errors.As(err, &unknown)
 }
 
 type splitConn struct {

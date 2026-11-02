@@ -2,7 +2,7 @@
 
 ## What's new
 
-- **Signing in works again, on every platform.** Mozilla's servers refuse the old direct sign-in method for plain clients, so the app now answers Mozilla's edge check by itself: on **Windows and Linux the Sign in button opens Mozilla's official sign-in page inside the app window** (email, password and two-factor code as usual — and you come back signed in), while **on Android and iOS you sign in with a simple email/password form right in the app** — no web page needed. If Mozilla asks for an emailed code or a safety unblock code, the form walks you through it.
+- **Signing in works again, on every platform.** Mozilla's servers refuse the old direct sign-in method for plain clients, so the app now answers Mozilla's edge check by itself: **you sign in with a simple email/password form right in the app** — no web page anywhere. If Mozilla asks for an emailed code or a safety unblock code, the form walks you through it.
 - **Adding a second account while connected** now works reliably: the sign-in goes through the active tunnel.
 - **Fixed reconnecting immediately after a disconnect** failing with a "port already in use" error.
 - **Existing accounts are restored silently at startup** — if your session only needed a token refresh, you no longer see the sign-in screen at all.
@@ -25,7 +25,7 @@ Everything from earlier releases is on board: the data usage panel, honest serve
 
 ## راهنمای فارسی
 
-- **ورود دوباره کار می‌کند — روی همه‌ی پلتفرم‌ها.** سرورهای موزیلا روش مستقیم قبلی را برای کلاینت‌های معمولی می‌بندند؛ حالا برنامه خودش پاسخ چالش لبه‌ی موزیلا را می‌دهد: روی **ویندوز و لینوکس** دکمه‌ی ورود، صفحه‌ی رسمی لاگین موزیلا را داخل همان پنجره باز می‌کند، و روی **اندروید و iOS** با یک فرم ساده‌ی ایمیل/رمز داخل خود برنامه وارد می‌شوید — بدون صفحه‌ی وب. اگر موزیلا کد ایمیلی یا کد امنیتی بخواهد، همان فرم مرحله‌به‌مرحله راهنمایی می‌کند.
+- **ورود دوباره کار می‌کند — روی همه‌ی پلتفرم‌ها.** سرورهای موزیلا روش مستقیم قبلی را برای کلاینت‌های معمولی می‌بندند؛ حالا برنامه خودش پاسخ چالش لبه‌ی موزیلا را می‌دهد: با یک **فرم ساده‌ی ایمیل/رمز داخل خود برنامه** وارد می‌شوید — بدون هیچ صفحه‌ی وب. اگر موزیلا کد ایمیلی یا کد امنیتی بخواهد، همان فرم مرحله‌به‌مرحله راهنمایی می‌کند.
 - **افزودن اکانت دوم در حالت اتصال‌دار** حالا از داخل تونل انجام می‌شود و درست کار می‌کند.
 - **رفع مشکل وصل‌شدن مجدد بعد از قطع** (خطای اشغال بودن پورت).
 - اکانت‌های قبلی موقع باز شدن برنامه بی‌صدا تمدید می‌شوند و دیگر صفحه‌ی لاگین را نمی‌بینید.

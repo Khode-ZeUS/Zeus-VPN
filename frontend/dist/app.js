@@ -183,12 +183,6 @@ function applyPlatform() {
   $("#group-protection").hidden = !f.killSwitch;
   $("#group-appfilter").hidden = !f.appFilter;
   $("#app-filter").hidden = !f.appFilter;
-  // The direct email/password form runs on the mobiles (the engine solves
-  // Mozilla's edge challenge itself); the desktop keeps the web sign-in.
-  const mobile = snap.platform === "android" || snap.platform === "ios";
-  $("#login-direct").hidden = !mobile;
-  $("#login-web").hidden = mobile;
-  $("#login-hint").hidden = mobile;
 }
 
 function render() {

@@ -39,6 +39,10 @@ type Settings struct {
 	Apps          []string `json:"apps"`
 	// Email is only read to migrate single-account installs.
 	Email string `json:"email,omitempty"`
+	// UpstreamProxy is the user's own proxy for reaching Mozilla's
+	// endpoints when the direct path fails on their network:
+	// "socks5://host:port" or "http://host:port". Empty = none.
+	UpstreamProxy string `json:"upstream_proxy,omitempty"`
 }
 
 func DefaultSettings() Settings {

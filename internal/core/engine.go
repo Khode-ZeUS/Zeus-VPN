@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"zeusvpn/internal/killswitch"
@@ -66,6 +67,7 @@ type Engine struct {
 	servers   []mozilla.Country
 	serversAt time.Time
 	state     State
+	boot      atomic.Pointer[mozilla.Bootstrap]
 
 	up     *tunnel.Upstream
 	mixed  *tunnel.MixedServer
@@ -104,8 +106,23 @@ func NewEngine() *Engine {
 	e := &Engine{Auth: NewAuth(), settings: store.LoadSettings(), renewKick: make(chan struct{}, 1)}
 	netx.SetSplitMode(e.settings.TLSSplit)
 	e.state = State{Status: StatusDisconnected, Mode: e.settings.Mode, Account: e.Auth.ActiveEmail()}
+	e.rebuildBootstrap()
 	e.openLogFile()
 	return e
+}
+
+// rebuildBootstrap (re)creates the server-list bootstrap manager with the
+// current settings: it picks up a user-configured upstream proxy and the
+// per-network memory of which path worked.
+func (e *Engine) rebuildBootstrap() {
+	e.boot.Store(mozilla.NewBootstrap(mozilla.BootstrapOptions{
+		ProxyURL: e.settings.UpstreamProxy,
+		Masque:   e.fetchServersViaTunnel,
+		Cache: func() ([]mozilla.Country, bool) {
+			var cached []mozilla.Country
+			return cached, store.LoadJSON("servers.json", &cached) && len(cached) > 0
+		},
+	}))
 }
 
 // LogPath is the persistent log, kept for troubleshooting.
@@ -179,9 +196,13 @@ func (e *Engine) Settings() store.Settings {
 
 func (e *Engine) SaveSettings(s store.Settings) error {
 	e.mu.Lock()
+	proxyChanged := e.settings.UpstreamProxy != s.UpstreamProxy
 	e.settings = s
 	e.mu.Unlock()
 	netx.SetSplitMode(s.TLSSplit)
+	if proxyChanged {
+		e.rebuildBootstrap()
+	}
 	if !s.KillSwitch && killswitch.Active() {
 		killswitch.Disable()
 		e.Log("info", "kill switch turned off: internet unblocked")
@@ -222,7 +243,10 @@ func (e *Engine) fetchServersViaTunnel() ([]mozilla.Country, error) {
 	return list, nil
 }
 
-// Servers returns the cached server list, refreshing it when stale.
+// Servers returns the cached server list, refreshing it when stale. The
+// refresh goes through the bootstrap manager: direct, the user's upstream
+// proxy, Firefox's recommended masque server, or the last saved copy —
+// whichever works first, remembered per network.
 func (e *Engine) Servers(force bool) ([]mozilla.Country, error) {
 	e.mu.Lock()
 	if !force && len(e.servers) > 0 && time.Since(e.serversAt) < 30*time.Minute {
@@ -231,28 +255,16 @@ func (e *Engine) Servers(force bool) ([]mozilla.Country, error) {
 		return s, nil
 	}
 	e.mu.Unlock()
-	list, err := mozilla.FetchServerList()
+	list, reports, err := e.boot.Load().ServerList()
+	for _, r := range reports {
+		if r.OK {
+			e.Log("info", fmt.Sprintf("server list via %s (%d ms)", r.Path, r.Millis))
+		} else {
+			e.Log("warning", "bootstrap path "+r.Path+" failed: "+r.Err)
+		}
+	}
 	if err != nil {
-		e.mu.Lock()
-		s := e.servers
-		e.mu.Unlock()
-		if len(s) > 0 {
-			return s, nil
-		}
-		// Mozilla's list server may be unreachable; the last saved copy
-		// is good enough to connect.
-		var cached []mozilla.Country
-		if store.LoadJSON("servers.json", &cached) && len(cached) > 0 {
-			e.Log("warning", "using the saved server list: "+err.Error())
-			e.mu.Lock()
-			e.servers = cached
-			e.mu.Unlock()
-			return cached, nil
-		}
-		e.Log("warning", "server list host unreachable, downloading it through the VPN: "+err.Error())
-		if list, err = e.fetchServersViaTunnel(); err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 	store.SaveJSON("servers.json", list)
 	e.mu.Lock()

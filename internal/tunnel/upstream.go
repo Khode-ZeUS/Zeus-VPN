@@ -22,6 +22,7 @@ import (
 	"zeusvpn/internal/netx"
 	"zeusvpn/internal/usage"
 
+	utls "github.com/refraction-networking/utls"
 	"golang.org/x/net/http2"
 )
 
@@ -174,7 +175,19 @@ type endpoint struct {
 // endpoint must be called with u.mu held.
 func (u *Upstream) endpoint() endpoint { return endpoint{u.host, u.port, u.addrs} }
 
-func (u *Upstream) handshake(ctx context.Context, ep endpoint, ip netip.Addr) (*tls.Conn, error) {
+// tlsConn is the established TLS connection handed to HTTP/2: with uTLS the
+// underlying conn is a utls.UConn, not a stdlib *tls.Conn.
+type tlsConn struct {
+	conn net.Conn
+	alpn string
+}
+
+// handshake establishes the tunnel's TLS as a Chrome-fingerprinted client
+// (uTLS): on filtered networks the middleboxes do not just read the plain
+// SNI — they reassemble fragmented ClientHellos and recognize Go's TLS
+// fingerprint itself, then answer with a forged certificate. A real
+// browser's ClientHello passes where Go's own does not.
+func (u *Upstream) handshake(ctx context.Context, ep endpoint, ip netip.Addr) (*tlsConn, error) {
 	dctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	start := time.Now()
@@ -182,11 +195,12 @@ func (u *Upstream) handshake(ctx context.Context, ep endpoint, ip netip.Addr) (*
 	if err != nil {
 		return nil, err
 	}
-	tc := tls.Client(raw, &tls.Config{ServerName: ep.host, NextProtos: []string{"h2"}, MinVersion: tls.VersionTLS12})
+	cfg := &utls.Config{ServerName: ep.host, NextProtos: []string{"h2"}, MinVersion: tls.VersionTLS12}
+	tc := utls.UClient(raw, cfg, utls.HelloChrome_Auto)
 	if err := tc.HandshakeContext(dctx); err != nil {
 		raw.Close()
 		// Record the TLS stage: a forged certificate (CERT_INVALID) is the
-		// SNI-middlebox fingerprint on filtered networks.
+		// middlebox fingerprint on filtered networks.
 		code, detail := netdiag.Classify(err)
 		stage := netdiag.TLS
 		if code == netdiag.CertInvalid {
@@ -196,7 +210,7 @@ func (u *Upstream) handshake(ctx context.Context, ep endpoint, ip netip.Addr) (*
 		return nil, err
 	}
 	netdiag.Report(ep.host, netdiag.TLS, netdiag.OK, "", time.Since(start))
-	return tc, nil
+	return &tlsConn{conn: tc, alpn: tc.ConnectionState().NegotiatedProtocol}, nil
 }
 
 func (u *Upstream) newConn(ctx context.Context, ep endpoint) (*http2.ClientConn, error) {
@@ -224,14 +238,14 @@ func (u *Upstream) newConn(ctx context.Context, ep endpoint) (*http2.ClientConn,
 			}
 			continue
 		}
-		if p := tc.ConnectionState().NegotiatedProtocol; p != "h2" {
-			tc.Close()
-			lastErr = fmt.Errorf("%s did not negotiate HTTP/2 (got %q)", ep.host, p)
+		if tc.alpn != "h2" {
+			tc.conn.Close()
+			lastErr = fmt.Errorf("%s did not negotiate HTTP/2 (got %q)", ep.host, tc.alpn)
 			continue
 		}
-		cc, err := u.transport.NewClientConn(tc)
+		cc, err := u.transport.NewClientConn(tc.conn)
 		if err != nil {
-			tc.Close()
+			tc.conn.Close()
 			if lastErr == nil {
 				lastErr = err
 			}

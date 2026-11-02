@@ -469,6 +469,19 @@ func (e *Engine) Connect() {
 }
 
 func (e *Engine) connect(ctx context.Context, st store.Settings) error {
+	// A reconnect can arrive while the previous session's pieces are still
+	// up (mobile: the tunnel dropped and the host re-entered connect) —
+	// close the stale ones instead of failing later on a busy port.
+	e.mu.Lock()
+	staleMixed, staleUp := e.mixed, e.up
+	e.mixed, e.up = nil, nil
+	e.mu.Unlock()
+	if staleMixed != nil {
+		staleMixed.Close()
+	}
+	if staleUp != nil {
+		staleUp.Close()
+	}
 	if st.Mode == store.ModeTUN && TunNeedsElevation && !IsElevated() {
 		return errors.New("full VPN mode needs administrator rights")
 	}

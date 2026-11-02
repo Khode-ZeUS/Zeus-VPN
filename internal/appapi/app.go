@@ -16,6 +16,7 @@ import (
 	"zeusvpn/internal/core"
 	"zeusvpn/internal/killswitch"
 	"zeusvpn/internal/mozilla"
+	"zeusvpn/internal/netdiag"
 	"zeusvpn/internal/store"
 	"zeusvpn/internal/usage"
 	"zeusvpn/internal/weblogin"
@@ -429,6 +430,13 @@ func (a *App) SubmitUnblock(code string) (*core.LoginStep, error) {
 func (a *App) CancelLogin() {
 	a.eng.Auth.CancelLogin()
 	a.emitState()
+}
+
+// NetworkDiagnostics returns the recent connection diagnostics events: the
+// DNS, TCP, TLS, certificate and HTTP stages with their per-stage error
+// codes and durations (the Connection Diagnostics view).
+func (a *App) NetworkDiagnostics() []netdiag.Event {
+	return netdiag.Snapshot()
 }
 
 func active(st string) bool {

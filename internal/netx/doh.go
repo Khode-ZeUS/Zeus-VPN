@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"zeusvpn/internal/netdiag"
+
 	"golang.org/x/net/dns/dnsmessage"
 )
 
@@ -70,18 +72,40 @@ func LookupHost(ctx context.Context, host string) ([]netip.Addr, error) {
 // DialResolved dials "host:port" using LookupHost. Addresses are raced,
 // each started 300 ms after the previous one, and the first connection
 // wins: some addresses of a CDN can be blackholed while others work.
+// The DNS and TCP stages are reported to netdiag.
 func DialResolved(ctx context.Context, network, address string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
 		return nil, err
 	}
+	dnsStart := time.Now()
 	addrs, err := LookupHost(ctx, host)
 	if err != nil {
+		code, detail := netdiag.Classify(err)
+		netdiag.Report(host, netdiag.DNS, code, detail, time.Since(dnsStart))
 		return nil, err
 	}
 	if len(addrs) == 0 {
+		netdiag.Report(host, netdiag.DNS, netdiag.DNSFailed, "no addresses", time.Since(dnsStart))
 		return nil, errors.New("no addresses for " + host)
 	}
+	if _, perr := netip.ParseAddr(host); perr != nil {
+		netdiag.Report(host, netdiag.DNS, netdiag.OK, "", time.Since(dnsStart))
+	}
+	tcpStart := time.Now()
+	conn, err := dialResolvedConn(ctx, network, host, port, addrs)
+	if err != nil {
+		code, detail := netdiag.Classify(err)
+		netdiag.Report(address, netdiag.TCP, code, detail, time.Since(tcpStart))
+		return nil, err
+	}
+	netdiag.Report(address, netdiag.TCP, netdiag.OK, "", time.Since(tcpStart))
+	return conn, nil
+}
+
+// dialResolvedConn races the resolved addresses; split out so DialResolved
+// can wrap the result with diagnostics.
+func dialResolvedConn(ctx context.Context, network, host, port string, addrs []netip.Addr) (net.Conn, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	type result struct {

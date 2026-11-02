@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"zeusvpn/internal/netdiag"
 	"zeusvpn/internal/netx"
 	"zeusvpn/internal/usage"
 
@@ -176,6 +177,7 @@ func (u *Upstream) endpoint() endpoint { return endpoint{u.host, u.port, u.addrs
 func (u *Upstream) handshake(ctx context.Context, ep endpoint, ip netip.Addr) (*tls.Conn, error) {
 	dctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
+	start := time.Now()
 	raw, err := netx.DialContext(dctx, "tcp", net.JoinHostPort(ip.String(), strconv.Itoa(ep.port)))
 	if err != nil {
 		return nil, err
@@ -183,8 +185,17 @@ func (u *Upstream) handshake(ctx context.Context, ep endpoint, ip netip.Addr) (*
 	tc := tls.Client(raw, &tls.Config{ServerName: ep.host, NextProtos: []string{"h2"}, MinVersion: tls.VersionTLS12})
 	if err := tc.HandshakeContext(dctx); err != nil {
 		raw.Close()
+		// Record the TLS stage: a forged certificate (CERT_INVALID) is the
+		// SNI-middlebox fingerprint on filtered networks.
+		code, detail := netdiag.Classify(err)
+		stage := netdiag.TLS
+		if code == netdiag.CertInvalid {
+			stage = netdiag.Cert
+		}
+		netdiag.Report(ep.host, stage, code, detail, time.Since(start))
 		return nil, err
 	}
+	netdiag.Report(ep.host, netdiag.TLS, netdiag.OK, "", time.Since(start))
 	return tc, nil
 }
 

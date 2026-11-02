@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"zeusvpn/internal/netdiag"
 )
 
 const (
@@ -153,6 +155,7 @@ func fxaDo(method, path, sessionToken string, payload any) (map[string]any, erro
 			req.Header.Set("Authorization", h)
 		}
 		var err error
+		httpStart := time.Now()
 		resp, err = c.Do(req)
 		if err != nil {
 			if req.Context().Err() != nil {
@@ -162,6 +165,8 @@ func fxaDo(method, path, sessionToken string, payload any) (map[string]any, erro
 			// pooled connections and send the request again — the loop
 			// rebuilds it (and the Hawk header) each round, and the
 			// transport retries a cut handshake fragmented.
+			code, detail := netdiag.Classify(err)
+			netdiag.Report(path, netdiag.HTTP, code, detail, time.Since(httpStart))
 			lastNetErr = err
 			resp, respBody = nil, nil
 			ResetConnections()
@@ -170,6 +175,14 @@ func fxaDo(method, path, sessionToken string, payload any) (map[string]any, erro
 		}
 		respBody = readBody(resp, 1<<20)
 		resp.Body.Close()
+		switch {
+		case resp.StatusCode == 406:
+			netdiag.Report(path, netdiag.HTTP, netdiag.HTTPBlocked, errorSnippet(respBody), time.Since(httpStart))
+		case resp.StatusCode >= 400:
+			netdiag.Report(path, netdiag.HTTP, fmt.Sprintf("HTTP_%d", resp.StatusCode), errorSnippet(respBody), time.Since(httpStart))
+		default:
+			netdiag.Report(path, netdiag.HTTP, netdiag.OK, "", time.Since(httpStart))
+		}
 		if resp.StatusCode != 406 {
 			break
 		}

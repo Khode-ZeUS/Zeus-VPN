@@ -1,12 +1,13 @@
-# Zeus VPN 1.1.0.8
+# Zeus VPN 1.1.0.9
 
 ## What's new
 
-- **Signing in works again, on every platform.** Mozilla's servers refuse the old direct sign-in method for plain clients, so the app now answers Mozilla's edge check by itself: **you sign in with a simple email/password form right in the app** — no web page anywhere. If Mozilla asks for an emailed code or a safety unblock code, the form walks you through it.
+- **Signing in works again, on every platform.** Mozilla's servers refuse the old direct sign-in method for plain clients, so the app now answers Mozilla's edge check by itself: **you sign in with a simple email/password form right in the app** — no web page anywhere, on the desktop just like on the phone. If Mozilla asks for an emailed code or a safety unblock code, the form walks you through it.
+- **Fixed connecting on networks that hijack the VPN-server handshake** ("certificate signed by unknown authority"): the app now recognizes the forged certificate and repeats the handshake with the server name hidden, exactly the trick it already uses for blocked websites.
+- **Fixed connecting failing after a brief network blip** — the sign-in token refresh now retries with a fresh connection instead of failing the connect.
 - **Adding a second account while connected** now works reliably: the sign-in goes through the active tunnel.
 - **Fixed reconnecting immediately after a disconnect** failing with a "port already in use" error.
 - **Existing accounts are restored silently at startup** — if your session only needed a token refresh, you no longer see the sign-in screen at all.
-- On networks where Mozilla's endpoints cannot be reached directly, the app falls back to the VPN tunnel or a system-configured proxy (another VPN tool) automatically.
 
 Everything from earlier releases is on board: the data usage panel, honest server pings, live remaining-data refresh, and release-signed Android builds.
 
@@ -16,7 +17,7 @@ Everything from earlier releases is on board: the data usage panel, honest serve
 |---|---|
 | Windows 10/11 | `ZeusVPN-amd64-installer.exe` (or the portable `ZeusVPN.exe`) |
 | Android 7+ | `ZeusVPN-android-arm64-v8a.apk` (most phones), `-armeabi-v7a` or `-universal` |
-| Linux x86-64 (Ubuntu/Debian/Fedora 36+) | `zeusvpn_1.1.0.8_amd64.deb` or `ZeusVPN-linux-amd64.tar.gz` |
+| Linux x86-64 (Ubuntu/Debian/Fedora 36+) | `zeusvpn_1.1.0.9_amd64.deb` or `ZeusVPN-linux-amd64.tar.gz` |
 | Linux x86-64 (CentOS/RHEL 9, older WebKitGTK) | `ZeusVPN-linux-amd64-gtk40.tar.gz` |
 | macOS (beta) | `ZeusVPN-macos-universal-beta.dmg` |
 | iOS / iPadOS (beta) | `ZeusVPN-ios-unsigned-beta.ipa` |
@@ -25,13 +26,14 @@ Everything from earlier releases is on board: the data usage panel, honest serve
 
 ## راهنمای فارسی
 
-- **ورود دوباره کار می‌کند — روی همه‌ی پلتفرم‌ها.** سرورهای موزیلا روش مستقیم قبلی را برای کلاینت‌های معمولی می‌بندند؛ حالا برنامه خودش پاسخ چالش لبه‌ی موزیلا را می‌دهد: با یک **فرم ساده‌ی ایمیل/رمز داخل خود برنامه** وارد می‌شوید — بدون هیچ صفحه‌ی وب. اگر موزیلا کد ایمیلی یا کد امنیتی بخواهد، همان فرم مرحله‌به‌مرحله راهنمایی می‌کند.
+- **ورود دوباره کار می‌کند — روی همه‌ی پلتفرم‌ها.** سرورهای موزیلا روش مستقیم قبلی را برای کلاینت‌های معمولی می‌بندند؛ حالا برنامه خودش پاسخ چالش لبه‌ی موزیلا را می‌دهد: با یک **فرم ساده‌ی ایمیل/رمز داخل خود برنامه** وارد می‌شوید — روی کامپیوتر هم مثل گوشی، بدون هیچ صفحه‌ی وب. اگر موزیلا کد ایمیلی یا کد امنیتی بخواهد، همان فرم مرحله‌به‌مرحله راهنمایی می‌کند.
+- **رفع خطای «certificate signed by unknown authority» موقع وصل‌شدن** روی بعضی شبکه‌ها: برنامه گواهی جعلی را تشخیص می‌دهد و هندشیک را با مخفی‌کردن نام سرور تکرار می‌کند.
+- **رفع شکست اتصال بعد از یک قطعی کوتاه شبکه** — تمدید توکن حالا با اتصال تازه دوباره تلاش می‌کند.
 - **افزودن اکانت دوم در حالت اتصال‌دار** حالا از داخل تونل انجام می‌شود و درست کار می‌کند.
 - **رفع مشکل وصل‌شدن مجدد بعد از قطع** (خطای اشغال بودن پورت).
 - اکانت‌های قبلی موقع باز شدن برنامه بی‌صدا تمدید می‌شوند و دیگر صفحه‌ی لاگین را نمی‌بینید.
-- روی شبکه‌هایی که سرورهای موزیلا مستقیم باز نمی‌شوند، برنامه خودش از تونل یا پروکسی سیستم (ابزار VPN دیگر) استفاده می‌کند.
 - نسخه‌های **مک و iOS هنوز بتا** هستند.
 
 ---
 
-*Previous release: [v1.1.0.7](https://github.com/Khode-ZeUS/Zeus-VPN/releases/tag/v1.1.0.7)*
+*Previous release: [v1.1.0.8](https://github.com/Khode-ZeUS/Zeus-VPN/releases/tag/v1.1.0.8)*

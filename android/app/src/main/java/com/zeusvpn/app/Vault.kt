@@ -54,7 +54,7 @@ object Vault {
     }
 
     private fun cipher(km: KeyStore, mode: Int): Cipher {
-        val entry = km.getEntry(ALIAS) as KeyStore.SecretKeyEntry
+        val entry = km.getEntry(ALIAS, null) as KeyStore.SecretKeyEntry
         val c = Cipher.getInstance("AES/GCM/NoPadding")
         c.init(mode, entry.secretKey)
         return c

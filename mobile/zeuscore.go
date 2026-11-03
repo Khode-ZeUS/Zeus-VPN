@@ -10,10 +10,12 @@
 package zeuscore
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -175,6 +177,17 @@ func current() (*appapi.App, error) {
 		return nil, errors.New("not started")
 	}
 	return app, nil
+}
+
+// SetVaultKey installs the 32-byte master key the mobile host unwrapped
+// from the device secure store (Android Keystore / iOS Keychain). Call it
+// once at startup, before the first account load. Accepts hex; anything
+// other than 64 hex chars is ignored.
+func SetVaultKey(hexKey string) {
+	k, err := hex.DecodeString(strings.TrimSpace(hexKey))
+	if err == nil {
+		store.SetVaultKey(k)
+	}
 }
 
 // AutoConnect connects if the user enabled "Connect on launch" (or force).

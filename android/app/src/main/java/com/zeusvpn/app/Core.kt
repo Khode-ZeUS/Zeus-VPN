@@ -25,6 +25,9 @@ object Core : Host {
         if (!started.compareAndSet(false, true)) return
         context = ctx.applicationContext
         val dir = File(context.filesDir, "zeus").apply { mkdirs() }
+        // The account-file key comes from Android Keystore (in memory only);
+        // install it before the engine loads the accounts.
+        runCatching { Zeuscore.setVaultKey(Vault.keyHex(context)) }
         Zeuscore.start(dir.absolutePath, "android", this, null)
     }
 

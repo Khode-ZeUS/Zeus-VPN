@@ -194,6 +194,7 @@ func readProtected(name string, v any) bool {
 }
 
 func LoadAccounts() *Accounts {
+	migrateKeyIfNeeded()
 	var a Accounts
 	if readProtected("accounts.bin", &a) {
 		return &a

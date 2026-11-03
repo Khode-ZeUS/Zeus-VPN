@@ -7,7 +7,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // The Go engine handles sign-in, settings and servers in the app;
-        // the connection itself runs in the PacketTunnel extension.
+        // the connection itself runs in the PacketTunnel extension. The
+        // account-file key comes from the Keychain (in memory only).
+        ZeuscoreSetVaultKey(Vault.keyHex())
         ZeuscoreStart(Shared.dataDir.path, "ios", CoreHost.shared, TunnelController.shared)
         TunnelController.shared.load {
             if TunnelController.shared.isIdle {

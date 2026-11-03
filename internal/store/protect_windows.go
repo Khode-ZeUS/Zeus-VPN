@@ -32,3 +32,7 @@ func unprotect(enc []byte) ([]byte, error) {
 	defer windows.LocalFree(windows.Handle(unsafe.Pointer(out.Data)))
 	return append([]byte(nil), unsafe.Slice(out.Data, out.Size)...), nil
 }
+
+// migrateKeyIfNeeded: Windows wraps the account file with DPAPI — there is
+// no key file to migrate into a device store.
+func migrateKeyIfNeeded() {}

@@ -64,13 +64,12 @@ object Vault {
         val c = cipher(km, Cipher.ENCRYPT_MODE)
         val out = c.doFinal(key)
         val iv = c.iv
-        return java.util.Base64.getEncoder().encodeToString(iv + out)
+        return android.util.Base64.encodeToString(iv + out, android.util.Base64.NO_WRAP)
     }
 
     private fun unwrap(km: KeyStore, stored: String): ByteArray {
-        val blob = java.util.Base64.getDecoder().decode(stored)
+        val blob = android.util.Base64.decode(stored, android.util.Base64.DEFAULT)
         val c = cipher(km, Cipher.DECRYPT_MODE)
-        c.updateAAD(ByteArray(0))
         return c.doFinal(blob.copyOfRange(12, blob.size))
     }
 }

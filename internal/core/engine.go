@@ -547,20 +547,22 @@ func (e *Engine) connect(ctx context.Context, st store.Settings) error {
 	// VPN-server handshake (a forged certificate), the first endpoint may
 	// be unreachable while the next one is not.
 	tried := 0
+	seen := map[string]bool{}
 	var up *tunnel.Upstream
 	var ep mozilla.Endpoint
 	var lastErr error
-	for _, cand := range cands {
-		if tried >= 3 {
-			break
+	attempt := func(cand mozilla.Endpoint) bool {
+		if tried >= 5 || seen[cand.Host] {
+			return false
 		}
+		seen[cand.Host] = true
 		tried++
 		ep = cand
 		e.Log("info", fmt.Sprintf("selected upstream proxy %s (%s)", ep.Addr(), ep.CountryCode))
 		up, lastErr = tunnel.NewUpstream(ctx, ep.Host, ep.Port, pass.Token, e.onRejected)
 		if lastErr != nil {
 			mozilla.MarkEndpointFail(ep.Addr())
-			continue
+			return false
 		}
 		e.mu.Lock()
 		e.up = up
@@ -571,11 +573,50 @@ func (e *Engine) connect(ctx context.Context, st store.Settings) error {
 			e.mu.Lock()
 			e.up = nil
 			e.mu.Unlock()
-			continue
+			return false
 		}
+		// Warmup only establishes the HTTP/2 connection — a middlebox can
+		// let the handshake through and drop the payload, which the user
+		// sees as 'connected but nothing works'. Verify a real end-to-end
+		// stream before declaring the connect.
+		pctx, pcancel := context.WithTimeout(ctx, 12*time.Second)
+		pconn, perr := up.Dial(pctx, probeTarget)
+		pcancel()
+		if perr != nil {
+			mozilla.MarkEndpointFail(ep.Addr())
+			up.Close()
+			e.mu.Lock()
+			e.up = nil
+			e.mu.Unlock()
+			lastErr = perr
+			e.Log("warning", "server "+ep.Addr()+" did not carry traffic: "+perr.Error())
+			return false
+		}
+		pconn.Close()
 		mozilla.MarkEndpointOK(ep.Addr(), 0)
 		lastErr = nil
-		break
+		return true
+	}
+	for _, cand := range cands {
+		if tried >= 3 || attempt(cand) {
+			break
+		}
+	}
+	if up == nil {
+		// The chosen location's endpoints all failed — on some networks
+		// every address of the recommended record is hijacked. Widen the
+		// search to every country's servers: a working exit anywhere beats
+		// no connection.
+		var wide []mozilla.Endpoint
+		for i := range countries {
+			wide = append(wide, mozilla.Candidates(countries, countries[i].Code, "")...)
+		}
+		wide = mozilla.OrderHealthy(wide)
+		for _, cand := range wide {
+			if tried >= 5 || attempt(cand) {
+				break
+			}
+		}
 	}
 	if up == nil {
 		if lastErr == nil {

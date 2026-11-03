@@ -87,3 +87,24 @@ func TestBootstrapPathsAndMemory(t *testing.T) {
 		t.Fatalf("direct calls = %d, want 2", calls2["direct"])
 	}
 }
+
+// The compiled snapshot parses and carries the recommended server, and the
+// builtin path sits after the live paths.
+func TestBuiltinServerList(t *testing.T) {
+	list, err := BuiltinServerList()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) == 0 {
+		t.Fatal("builtin list is empty")
+	}
+	found := false
+	for _, c := range list {
+		if c.Code == "REC" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("builtin list has no REC entry")
+	}
+}

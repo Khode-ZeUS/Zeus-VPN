@@ -23,6 +23,28 @@ const bootstrapStateFile = "bootstrap.json"
 // badPathCooldown is how long a path that failed on this network sits out.
 const badPathCooldown = 30 * time.Minute
 
+// bootstrapPathTimeout bounds one path attempt: a hanging path must not
+// stall the whole bootstrap (the goroutine is abandoned when it runs late).
+const bootstrapPathTimeout = 12 * time.Second
+
+func fetchWithTimeout(p namedPath, d time.Duration) (list []Country, err error) {
+	type result struct {
+		list []Country
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		l, e := p.fetch()
+		done <- result{l, e}
+	}()
+	select {
+	case r := <-done:
+		return r.list, r.err
+	case <-time.After(d):
+		return nil, errors.New("timed out")
+	}
+}
+
 // BootstrapOptions wires the environment into the manager. Masque and Cache
 // may be nil: Masque needs a signed-in account (it tunnels through
 // Firefox's recommended server), Cache reads the last saved list.
@@ -97,6 +119,10 @@ func NewBootstrap(opts BootstrapOptions) *Bootstrap {
 			return nil, errors.New("no saved server list")
 		}})
 	}
+	// The compiled snapshot: the last network-independent resort, so the
+	// server page is populated and a connect is attempted even when every
+	// live path is refused.
+	b.paths = append(b.paths, namedPath{"builtin", BuiltinServerList})
 	b.mu.Lock()
 	if b.opts.Load != nil {
 		if mem, ok := b.opts.Load(); ok {
@@ -137,7 +163,7 @@ func (b *Bootstrap) ServerList() (list []Country, reports []BootstrapReport, err
 	var lastErr error
 	for _, p := range order {
 		start := time.Now()
-		list, err = p.fetch()
+		list, err = fetchWithTimeout(p, bootstrapPathTimeout)
 		r := BootstrapReport{Path: p.name, Millis: time.Since(start).Milliseconds()}
 		if err != nil {
 			r.Err = err.Error()
@@ -167,7 +193,7 @@ func (b *Bootstrap) remember(sig, path string, err error) {
 	if b.mem.Network != sig {
 		b.mem = bootstrapMemory{Network: sig}
 	}
-	if path == "cache" {
+	if path == "cache" || path == "builtin" {
 		return
 	}
 	if err == nil {

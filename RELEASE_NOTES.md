@@ -8,6 +8,12 @@
 - **Adding a second account while connected** now works reliably: the sign-in goes through the active tunnel.
 - **Fixed reconnecting immediately after a disconnect** failing with a "port already in use" error.
 - **Existing accounts are restored silently at startup** — if your session only needed a token refresh, you no longer see the sign-in screen at all.
+- **Better compatibility and diagnostics**: the server list is compiled into the app as a last-resort (the server page is never empty), the VPN-server handshake now presents a browser-grade TLS fingerprint for filtered networks, and each connection stage (DNS, TCP, TLS, certificate, HTTP) is recorded — Settings → Network compatibility → Connection diagnostics.
+
+**Known issues**
+
+- Updating from an older version may ask for **one sign-in** — the account file moves to the device's secure store (Android Keystore / iOS Keychain) in this release.
+- On some older **32-bit phones** the app may still crash at startup — a fix is being worked on for the next release. Use the `-universal` APK on such devices.
 
 Everything from earlier releases is on board: the data usage panel, honest server pings, live remaining-data refresh, and release-signed Android builds.
 
@@ -32,6 +38,12 @@ Everything from earlier releases is on board: the data usage panel, honest serve
 - **افزودن اکانت دوم در حالت اتصال‌دار** حالا از داخل تونل انجام می‌شود و درست کار می‌کند.
 - **رفع مشکل وصل‌شدن مجدد بعد از قطع** (خطای اشغال بودن پورت).
 - اکانت‌های قبلی موقع باز شدن برنامه بی‌صدا تمدید می‌شوند و دیگر صفحه‌ی لاگین را نمی‌بینید.
+- **سازگاری و عیب‌یابی بهتر**: فهرست سرورها داخل خود برنامه ذخیره شده (صفحه‌ی سرورها دیگر خالی نمی‌ماند)، هندشیک تونل با اثرانگشت مرورگر انجام می‌شود و هر مرحله‌ی اتصال (DNS، TCP، TLS، گواهی، HTTP) ثبت می‌شود — تنظیمات → Network compatibility → Connection diagnostics.
+
+**نکات شناخته‌شده**
+
+- آپدیت از نسخه‌های قبلی ممکن است **یک بار ورود مجدد** بخواهد — فایل اکانت‌ها در این نسخه به Keystore/Keychain دستگاه منتقل می‌شود.
+- روی بعضی **گوشی‌های قدیمی ۳۲بیتی** ممکن است اپ موقع باز شدن کرش کند — فیکس آن در نسخه‌ی بعد در حال کار است؛ روی این دستگاه‌ها از APK‌ `-universal` استفاده کنید.
 - نسخه‌های **مک و iOS هنوز بتا** هستند.
 
 ---

@@ -199,7 +199,11 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, macos, linux, linux-gtk40, android, ios]
+    # macOS and iOS are beta builds (the iOS ipa is unsigned anyway) and
+    # their runners queue for a long time on the free tier — the release
+    # must not wait for them or a single queue delay blocks every draft.
+    # Their artifacts still attach to the run for manual download.
+    needs: [windows, linux, linux-gtk40, android]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

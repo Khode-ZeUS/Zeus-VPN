@@ -76,6 +76,30 @@ func IsCertVerifyError(err error) bool {
 	return errors.As(err, &unknown)
 }
 
+// IsUnknownAuthority reports a certificate signed by an authority the
+// device does not know — the middlebox signature. A failure against a
+// KNOWN authority (expired, hostname mismatch) is a different problem:
+// fragmentation cannot fix trust, so callers must not MarkBlocked then.
+func IsUnknownAuthority(err error) bool {
+	var unknown x509.UnknownAuthorityError
+	return errors.As(err, &unknown)
+}
+
+// CertIssuer returns the issuer of the certificate that failed
+// verification, for the diagnostics log ("" when unavailable). The leaf is
+// the first unverified certificate of the chain the server sent.
+func CertIssuer(err error) string {
+	var certErr *tls.CertificateVerificationError
+	if errors.As(err, &certErr) && len(certErr.UnverifiedCertificates) > 0 {
+		return certErr.UnverifiedCertificates[0].Issuer.String()
+	}
+	var u x509.UnknownAuthorityError
+	if errors.As(err, &u) && u.Cert != nil {
+		return u.Cert.Issuer.String()
+	}
+	return ""
+}
+
 type splitConn struct {
 	net.Conn
 	wrote     bool

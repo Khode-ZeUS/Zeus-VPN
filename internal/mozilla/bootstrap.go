@@ -27,6 +27,10 @@ const badPathCooldown = 30 * time.Minute
 // stall the whole bootstrap (the goroutine is abandoned when it runs late).
 const bootstrapPathTimeout = 12 * time.Second
 
+// raceStagger is the head start each earlier path gets in the parallel
+// bootstrap: the preferred path usually answers within 2s.
+const raceStagger = 2 * time.Second
+
 func fetchWithTimeout(p namedPath, d time.Duration) (list []Country, err error) {
 	type result struct {
 		list []Country
@@ -138,9 +142,54 @@ func NewBootstrap(opts BootstrapOptions) *Bootstrap {
 	return b
 }
 
+// race runs the ordered paths staggered (each 2s after the previous one);
+// the first success wins and cancels the rest. A sequential walk made the
+// server page wait out a 30s direct timeout before ever trying the proxy.
+func (b *Bootstrap) race(order []namedPath) ([]Country, []BootstrapReport, error) {
+	type res struct {
+		list []Country
+		rep  BootstrapReport
+		err  error
+	}
+	ch := make(chan res, len(order))
+	done := make(chan struct{})
+	defer close(done)
+	for i, p := range order {
+		go func(i int, p namedPath) {
+			select {
+			case <-time.After(time.Duration(i) * raceStagger):
+			case <-done:
+				return
+			}
+			start := time.Now()
+			l, e := fetchWithTimeout(p, bootstrapPathTimeout)
+			r := BootstrapReport{Path: p.name, OK: e == nil, Millis: time.Since(start).Milliseconds()}
+			if e != nil {
+				r.Err = e.Error()
+			}
+			ch <- res{l, r, e}
+		}(i, p)
+	}
+	var reports []BootstrapReport
+	var lastErr error
+	for range order {
+		r := <-ch
+		reports = append(reports, r.rep)
+		if r.err == nil {
+			// remember the winner; the losers of this race are transient
+			// (or genuinely blocked, and their own failure is not recorded
+			// as a cooldown here — only the sequential walk does that).
+			return r.list, reports, nil
+		}
+		lastErr = r.err
+	}
+	return nil, reports, lastErr
+}
+
 // ServerList downloads the list over the best available path and reports
-// every attempt. The remembered-good path for this network goes first; a
-// path that failed here recently sits out its cooldown.
+// every attempt. The paths run staggered in parallel; the remembered-good
+// path for this network goes first and a path that failed here recently
+// sits out its cooldown.
 func (b *Bootstrap) ServerList() (list []Country, reports []BootstrapReport, err error) {
 	b.mu.Lock()
 	sig := b.opts.Sig()
@@ -159,30 +208,35 @@ func (b *Bootstrap) ServerList() (list []Country, reports []BootstrapReport, err
 		}
 	}
 	b.mu.Unlock()
+	if len(order) == 0 {
+		return nil, nil, errors.New("no bootstrap path is available")
+	}
 
-	var lastErr error
-	for _, p := range order {
-		start := time.Now()
-		list, err = fetchWithTimeout(p, bootstrapPathTimeout)
-		r := BootstrapReport{Path: p.name, Millis: time.Since(start).Milliseconds()}
-		if err != nil {
-			r.Err = err.Error()
-			lastErr = err
-		} else {
-			r.OK = true
-		}
-		reports = append(reports, r)
-		netdiag.Report("bootstrap:"+p.name, netdiag.HTTP, map[bool]string{true: netdiag.OK, false: netdiag.HTTPBlocked}[r.OK], r.Err, time.Since(start))
-		if err == nil {
-			b.remember(sig, p.name, nil)
+	list, reports, err = b.race(order)
+	for _, r := range reports {
+		netdiag.Report("bootstrap:"+r.Path, netdiag.HTTP,
+			map[bool]string{true: netdiag.OK, false: netdiag.HTTPBlocked}[r.OK],
+			r.Err, time.Duration(r.Millis)*time.Millisecond)
+		// Every reported path gets its memory: the winner becomes
+		// LastGood, and a live path that failed here sits out its
+		// cooldown (cache/builtin are exempt — they always run).
+		if r.OK {
+			b.remember(sig, r.Path, nil)
 			return list, reports, nil
 		}
-		b.remember(sig, p.name, err)
+		b.remember(sig, r.Path, errors.New(r.Err))
 	}
-	if lastErr == nil {
-		lastErr = errors.New("no bootstrap path is available")
+	var firstErr error
+	for _, r := range reports {
+		if r.Err != "" {
+			firstErr = errors.New(r.Err)
+			break
+		}
 	}
-	return nil, reports, lastErr
+	if firstErr == nil {
+		firstErr = errors.New("no bootstrap path is available")
+	}
+	return nil, reports, firstErr
 }
 
 // remember updates the per-network memory: the winner is remembered, a
@@ -193,13 +247,12 @@ func (b *Bootstrap) remember(sig, path string, err error) {
 	if b.mem.Network != sig {
 		b.mem = bootstrapMemory{Network: sig}
 	}
-	if path == "cache" || path == "builtin" {
-		return
-	}
 	if err == nil {
 		b.mem.LastGood = path
 		delete(b.mem.BadUntil, path)
-	} else if b.mem.LastGood != path {
+	} else if path != "cache" && path != "builtin" && b.mem.LastGood != path {
+		// A failed live path sits out its cooldown; cache and builtin are
+		// exempt — they always run.
 		if b.mem.BadUntil == nil {
 			b.mem.BadUntil = map[string]time.Time{}
 		}

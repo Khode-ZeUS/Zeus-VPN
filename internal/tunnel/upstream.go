@@ -205,6 +205,9 @@ func (u *Upstream) handshake(ctx context.Context, ep endpoint, ip netip.Addr) (*
 		stage := netdiag.TLS
 		if code == netdiag.CertInvalid {
 			stage = netdiag.Cert
+			if issuer := netx.CertIssuer(err); issuer != "" {
+				detail += " issuer=" + issuer
+			}
 		}
 		netdiag.Report(ep.host, stage, code, detail, time.Since(start))
 		return nil, err
@@ -221,10 +224,13 @@ func (u *Upstream) newConn(ctx context.Context, ep endpoint) (*http2.ClientConn,
 	for _, ip := range ep.addrs {
 		wasBlocked := netx.HostBlocked(ep.host)
 		tc, err := u.handshake(ctx, ep, ip)
-		if err != nil && netx.IsCertVerifyError(err) {
-			// The network answered with a forged certificate — an SNI
-			// middlebox, not the real server. Hide the server name on the
-			// next attempt, exactly like a cut-off handshake.
+		if err != nil && netx.IsUnknownAuthority(err) {
+			// The network answered with a certificate signed by an unknown
+			// authority — an SNI middlebox, not the real server. Hide the
+			// server name on the next attempt, exactly like a cut-off
+			// handshake. Failures against a KNOWN authority (expired,
+			// hostname) are trust problems fragmentation cannot fix, so
+			// they are not marked.
 			netx.MarkBlocked(ep.host)
 		}
 		if err != nil && !wasBlocked && netx.HostBlocked(ep.host) && ctx.Err() == nil {

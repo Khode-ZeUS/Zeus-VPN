@@ -145,6 +145,7 @@ func Start(dataDir, platform string, host Host, controller TunnelController) {
 		return
 	}
 	store.SetDir(dataDir)
+	useAndroidRoots(dataDir)
 	core.NewTunDriver = func() core.TunDriver { return &mobileTun{host: host} }
 	p := appapi.Platform{
 		Name:        platform,
@@ -295,6 +296,7 @@ func StartTunnel(dataDir string, host Host) error {
 		return errors.New("already running")
 	}
 	store.SetDir(dataDir)
+	useAndroidRoots(dataDir)
 	core.NewTunDriver = func() core.TunDriver { return &mobileTun{host: host} }
 	e := core.NewEngine()
 	s := e.Settings()

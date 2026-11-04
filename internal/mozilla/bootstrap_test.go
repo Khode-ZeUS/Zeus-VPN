@@ -3,12 +3,14 @@ package mozilla
 import (
 	"errors"
 	"testing"
+	"time"
 )
 
 // fakeBootstrap builds a manager over in-memory paths and memory.
-func fakeBootstrap(sig string, fail map[string]bool) (*Bootstrap, map[string]int) {
+func fakeBootstrap(t *testing.T, sig string, fail map[string]bool) (*Bootstrap, map[string]int, time.Time) {
 	calls := map[string]int{}
 	mem := bootstrapMemory{Network: sig}
+	start := time.Now()
 	b := NewBootstrap(BootstrapOptions{
 		Sig:  func() string { return sig },
 		Save: func(m bootstrapMemory) { mem = m },
@@ -30,19 +32,21 @@ func fakeBootstrap(sig string, fail map[string]bool) (*Bootstrap, map[string]int
 		p := b.paths[i]
 		b.paths[i].fetch = func() ([]Country, error) {
 			calls[p.name]++
+			t.Logf("fetch %s at %v", p.name, time.Since(start).Round(time.Millisecond))
 			if fail[p.name] {
 				return nil, errors.New("blocked on this network")
 			}
 			return []Country{{Name: "List", Code: "LI"}}, nil
 		}
 	}
-	return b, calls
+	return b, calls, start
 }
 
 // The paths run in order, a failing path sits out its cooldown on the same
 // network, and a remembered-good path jumps the queue on the next call.
 func TestBootstrapPathsAndMemory(t *testing.T) {
-	b, calls := fakeBootstrap("net1", map[string]bool{"direct": true})
+	start := time.Now()
+	b, calls, _ := fakeBootstrap(t, "net1", map[string]bool{"direct": true})
 	list, reports, err := b.ServerList()
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +63,8 @@ func TestBootstrapPathsAndMemory(t *testing.T) {
 
 	// Same network, next call: direct is still in cooldown, cache remembered.
 	list2, _, err := b.ServerList()
-	if err != nil || list2[0].Code != "CA" {
+	t.Logf("second call: list=%v err=%v calls=%v at %v", list2, err, calls, time.Since(start).Round(time.Millisecond))
+	if err != nil || (len(list2) > 0 && list2[0].Code != "CA") {
 		t.Fatalf("second call: %v %v", list2, err)
 	}
 	if calls["direct"] != 1 {
@@ -67,7 +72,7 @@ func TestBootstrapPathsAndMemory(t *testing.T) {
 	}
 
 	// A different network: the memory resets, direct is tried again.
-	b2, calls2 := fakeBootstrap("net2", nil)
+	b2, calls2, _ := fakeBootstrap(t, "net2", nil)
 	list3, _, err := b2.ServerList()
 	if err != nil || list3[0].Code != "LI" {
 		t.Fatalf("new network: %v %v", list3, err)

@@ -42,11 +42,14 @@ object Vault {
         return key.joinToString("") { "%02x".format(it) }
     }
 
-    // The stored key, unwrapping it with the Keystore when needed.
+    // The stored key, unwrapping it with the Keystore when needed. An
+    // unwrap failure must NOT replace the key: a fresh key would make the
+    // existing account file unreadable and drop the user's sign-in.
     private fun key(prefs: SharedPreferences, km: KeyStore): ByteArray {
         val stored = prefs.getString(WRAPPED, null)
         if (stored != null) {
-            runCatching { return unwrap(km, stored) }
+            val unwrapped = runCatching { unwrap(km, stored) }.getOrNull()
+            if (unwrapped != null) return unwrapped
         }
         val key = ByteArray(32).also { SecureRandom().nextBytes(it) }
         prefs.edit().putString(WRAPPED, wrap(km, key)).apply()
@@ -69,7 +72,9 @@ object Vault {
 
     private fun unwrap(km: KeyStore, stored: String): ByteArray {
         val blob = android.util.Base64.decode(stored, android.util.Base64.DEFAULT)
-        val c = cipher(km, Cipher.DECRYPT_MODE)
+        val entry = km.getEntry(ALIAS, null) as KeyStore.SecretKeyEntry
+        val c = Cipher.getInstance("AES/GCM/NoPadding")
+        c.init(Cipher.DECRYPT_MODE, entry.secretKey, GCMParameterSpec(128, blob.copyOfRange(0, 12)))
         return c.doFinal(blob.copyOfRange(12, blob.size))
     }
 }

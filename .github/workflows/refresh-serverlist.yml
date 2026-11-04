@@ -1,0 +1,36 @@
+# Keeps the compiled server list (internal/mozilla/serverlist_snapshot.json,
+# the last-resort bootstrap path) from going stale: refreshed weekly from
+# Mozilla's public Remote Settings endpoint. The snapshot only matters when
+# every live bootstrap path fails on the user's network.
+name: Refresh server list
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Mozilla's server list
+        run: curl -fsS "https://firefox.settings.services.mozilla.com/v1/buckets/main/collections/vpn-serverlist/records" -o internal/mozilla/serverlist_snapshot.json
+      - name: Validate
+        run: |
+          python3 -m json.tool internal/mozilla/serverlist_snapshot.json > /dev/null
+          python3 - <<'PY'
+          import json
+          d = json.load(open('internal/mozilla/serverlist_snapshot.json'))
+          assert d.get('data'), 'empty server list'
+          assert any((r.get('country') or r).get('code') == 'REC' for r in d['data']), 'REC record missing'
+          PY
+      - name: Commit and push when changed
+        run: |
+          git config user.name "zeus-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add internal/mozilla/serverlist_snapshot.json
+          git diff --cached --quiet || (git commit -m "chore: refresh the server list snapshot" && git push)

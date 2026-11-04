@@ -45,7 +45,9 @@ function fmtDuration(ms) {
   return `${h}:${m}:${sec}`;
 }
 function esc(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  // ES2016 syntax only (no ?? / ?.): old un-updated Android WebViews must
+  // be able to parse the whole file.
+  return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 function flagHTML(code) {
   if (!code || code === "REC") return GLOBE;

@@ -224,6 +224,24 @@
 
   <div class="toast" id="toast" hidden></div>
 
+  <script>
+    // ES5 only, loaded before app.js: on old un-updated Android WebViews
+    // app.js cannot even parse (async/await needs Chrome 55+) and the page
+    // would stay blank forever — tell the user what to update instead.
+    window.addEventListener("error", function (e) {
+      if (!e || !e.message || !e.message.indexOf) return; // resource errors carry no message
+      if (document.getElementById("webview-old")) return;
+      var d = document.createElement("div");
+      d.id = "webview-old";
+      d.style.cssText = "position:fixed;inset:0;background:#090b1a;color:#eef0ff;z-index:2147483647;padding:24px;font:14px/1.5 sans-serif;";
+      d.innerHTML = "<b style='font-size:18px'>Zeus VPN</b><br><br>" +
+        "The system WebView of this device is too old to run the app.<br><br>" +
+        "Please update <b>Android System WebView</b> and <b>Google Chrome</b> in the Play Store (or via system updates), then reopen the app." +
+        "<br><br><small>" + String(e.message).slice(0, 120) + "</small>";
+      var target = function () { (document.body || document.documentElement).appendChild(d); };
+      if (document.body) target(); else document.addEventListener("DOMContentLoaded", target);
+    }, true);
+  </script>
   <script src="bridge.js"></script>
   <script src="app.js"></script>
 </body>

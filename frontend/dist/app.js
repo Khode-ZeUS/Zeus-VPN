@@ -92,7 +92,44 @@ function setLoading(btn, on) {
   btn.classList.toggle("loading", on);
 }
 function showView(id) {
-  for (const v of $$(".view")) v.hidden = v.id !== id;
+  // The redesigned shell: the intro splash hides on the first state render.
+  const intro = $("#intro-screen");
+  if (intro) intro.hidden = true;
+  $("#login-view").hidden = id !== "view-login";
+  $("#workspace").hidden = id !== "view-home";
+}
+
+// ---------- screen navigation (the redesigned shell) ----------
+function showScreen(name) {
+  const ws = $("#workspace");
+  if (ws) ws.hidden = false;
+  for (const s of $$("#workspace .screen")) s.hidden = s.dataset.screen !== name;
+  for (const b of $$("[data-screen]")) b.classList.toggle("active", b.dataset.screen === name);
+  if (name !== "statistics" && usageTimer) {
+    clearInterval(usageTimer);
+    usageTimer = null;
+  }
+}
+
+function openAppsPanel() {
+  $("#panel-apps").hidden = false;
+  $("#panel-scrim").hidden = false;
+}
+
+function closeAppsPanel() {
+  $("#panel-apps").hidden = true;
+  $("#panel-scrim").hidden = true;
+  showScreen("settings"); // the apps panel opens from the routing settings
+}
+
+function openLogsPanel() {
+  $("#panel-logs").hidden = false;
+  $("#panel-scrim").hidden = false;
+}
+
+function closeLogsPanel() {
+  $("#panel-logs").hidden = true;
+  $("#panel-scrim").hidden = true;
 }
 
 // ---------- in-app confirm (WebView2's native confirm() renders off-frame) ----------
@@ -105,22 +142,28 @@ function askConfirm(message, title = "Are you sure?") {
 }
 
 // ---------- sheets & modals ----------
+// The redesigned shell navigates data-screen sections instead of sheets;
+// openSheet keeps the old call sites working as a dispatcher.
 function openSheet(id) {
-  $("#scrim").hidden = false;
-  for (const s of $$(".sheet")) s.hidden = s.id !== id;
+  const screens = { "sheet-servers": "locations", "sheet-settings": "settings", "sheet-usage": "statistics" };
+  if (screens[id]) return showScreen(screens[id]);
+  if (id === "sheet-apps") return openAppsPanel();
+  if (id === "sheet-logs") return openLogsPanel();
 }
 function closeSheets() {
-  const appsOpen = !$("#sheet-apps").hidden;
-  $("#scrim").hidden = true;
-  for (const s of $$(".sheet")) s.hidden = true;
-  clearInterval(usageTimer);
-  usageTimer = null;
+  const appsOpen = !$("#panel-apps").hidden;
+  closeAppsPanel();
+  if (usageTimer) {
+    clearInterval(usageTimer);
+    usageTimer = null;
+  }
   // "Selected only"/"Except selected" need at least one app; an empty
   // selection reverts to tunnelling everything.
   if (appsOpen && appMode !== "all" && !selectedApps.length) {
     appMode = "all";
     saveAppSettings();
   }
+  showScreen("home");
 }
 
 // ---------- rendering ----------
@@ -433,69 +476,66 @@ async function loadUsage() {
   } catch (e) {
     usageApps = [];
   }
-  renderUsage();
+  renderAnalytics();
 }
 
-function renderUsage() {
-  const list = $("#usage-list");
+// ---------- analytics (the redesigned observatory) ----------
+function renderAnalytics() {
   if (!usageData) return;
-  const q = $("#usage-search").value.trim().toLowerCase();
+  const q = ($("#analytics-search") || { value: "" }).value.trim().toLowerCase();
   const sum = (k) => usageData.reduce((s, x) => s + x[k], 0);
-  $("#usage-total-down").textContent = fmtBytes(sum("down"));
-  $("#usage-total-up").textContent = fmtBytes(sum("up"));
-  $("#usage-total").textContent = fmtBytes(sum("down") + sum("up"));
+  const down = sum("down"), up = sum("up"), total = down + up;
+  const set = (id, v) => { const e = $(id); if (e) e.textContent = v; };
+  set("#analytics-total-down", fmtBytes(down));
+  set("#analytics-total-up", fmtBytes(up));
+  set("#analytics-total-traffic", fmtBytes(total));
+  set("#analytics-ip-count", String(usageData.length));
+  set("#analytics-donut-total", fmtBytes(total));
 
-  let html = "";
-  const apps = usageApps || [];
-  if (apps.length) {
-    // Apps first; tap one to unfold the destinations it used.
-    for (const a of apps) {
-      if (q && !(a.name || "").toLowerCase().includes(q) && !a.hosts.some((h) => h.host.includes(q))) continue;
-      const open = expandedApp === a.name;
-      html += `
-      <button class="usage-row app" data-app="${esc(a.name)}">
-        <span class="name"><b>${esc(a.name)}</b><small>&darr; ${fmtBytes(a.down)} &middot; &uarr; ${fmtBytes(a.up)}${open ? " · " + a.hosts.length + " destinations" : ""}</small></span>
-        <span class="usage-total">${fmtBytes(a.up + a.down)}<span class="chev ${open ? "open" : ""}">${CHEVRON}</span></span>
-      </button>`;
-      if (open) {
-        const hosts = a.hosts.filter((h) => !q || h.host.includes(q));
-        const max = Math.max(...hosts.map((h) => h.up + h.down), 1);
-        html += hosts.map((h) => `
-        <div class="usage-row sub">
-          <span class="name"><b title="${esc(h.host)}">${esc(h.host)}</b><small>&darr; ${fmtBytes(h.down)} &middot; &uarr; ${fmtBytes(h.up)}</small>
-            <span class="mini-bar"><i style="width:${Math.max(3, ((h.up + h.down) / max) * 100).toFixed(1)}%"></i></span></span>
-          <span class="usage-total">${fmtBytes(h.up + h.down)}</span>
-        </div>`).join("") || '<div class="usage-row sub"><span class="name"><small>No matches</small></span></div>';
-      }
-    }
-  } else {
-    // Platforms without per-app lookup: flat destinations.
-    const rows = usageData.filter((x) => !q || x.host.toLowerCase().includes(q));
-    const max = Math.max(...rows.map((x) => x.up + x.down), 1);
-    html = rows.map((x) => `
-      <div class="usage-row">
-        <span class="name"><b title="${esc(x.host)}">${esc(x.host)}</b><small>&darr; ${fmtBytes(x.down)} &middot; &uarr; ${fmtBytes(x.up)}</small>
-          <span class="mini-bar"><i style="width:${Math.max(3, ((x.up + x.down) / max) * 100).toFixed(1)}%"></i></span></span>
-        <span class="usage-total">${fmtBytes(x.up + x.down)}</span>
-      </div>`).join("");
+  // The upload/download donut: pathLength=100 segments.
+  const downShare = total > 0 ? Math.round((down / total) * 100) : 0;
+  const upShare = 100 - downShare;
+  const seg = (id, share, offset) => { const e = $(id); if (e) e.setAttribute("stroke-dasharray", share + " " + (100 - share)); if (e && offset != null) e.setAttribute("stroke-dashoffset", String(-offset)); };
+  seg("#analytics-donut-down", downShare, null);
+  seg("#analytics-donut-up", upShare, downShare);
+  set("#analytics-donut-down-value", fmtBytes(down));
+  set("#analytics-donut-up-value", fmtBytes(up));
+  const downPct = total > 0 ? Math.round((down / total) * 100) : 0;
+  set("#analytics-donut-down-share", downPct + "%");
+  set("#analytics-donut-up-share", (100 - downPct) + "%");
+
+  // The destination bars: top destinations by traffic share.
+  const rows = usageData.filter((x) => !q || x.host.toLowerCase().includes(q));
+  const max = Math.max(...rows.map((x) => x.up + x.down), 1);
+  const top = rows.sort((a, b) => (b.up + b.down) - (a.up + a.down)).slice(0, 12);
+  const bars = $("#analytics-destination-bars");
+  if (bars) {
+    bars.innerHTML = top.length ? top.map((x) => {
+      const share = ((x.up + x.down) / max) * 100;
+      return `<div class="analytics-destination-row"><span class="name" title="${esc(x.host)}">${esc(x.host)}</span><span class="bar"><i style="width:${Math.max(2, share).toFixed(1)}%"></i></span><span class="usage-total">${fmtBytes(x.up + x.down)}</span></div>`;
+    }).join("") : '<div class="analytics-state"><span data-i18n="loading">Loading…</span></div>';
   }
-  if (!html) {
-    html = `<div class="list-msg">${(usageData.length || apps.length) ? "No matches" : 'No data usage recorded yet.<br><small class="muted">Connect and use apps — their usage appears here.</small>'}</div>`;
+
+  // The session quota in the side panel.
+  set("#stats-quota", snap && snap.state ? fmtBytes(snap.state.QuotaLeft) : "—");
+  const fill = $("#stats-quota-fill");
+  if (fill && snap && snap.state && snap.state.QuotaLimit > 0) {
+    fill.style.width = Math.min(100, (snap.state.QuotaLeft / snap.state.QuotaLimit) * 100).toFixed(1) + "%";
   }
-  // Keep the scroll position: the list refreshes live while the sheet is open.
-  const at = list.scrollTop;
-  list.innerHTML = html;
-  list.scrollTop = at;
+  // The session duration from the connected timestamp.
+  const dur = $("#analytics-session-duration");
+  if (dur && snap && snap.state && snap.state.ConnectedAt > 0) {
+    const s = Math.floor(Date.now() / 1000) - snap.state.ConnectedAt;
+    dur.textContent = s > 0 ? Math.floor(s / 3600) + "h " + Math.floor((s % 3600) / 60) + "m" : "—";
+  }
 }
 
-function openUsageSheet() {
-  $("#usage-search").value = "";
+function openAnalytics() {
   usageData = null;
-  expandedApp = null;
-  openSheet("sheet-usage");
-  $("#usage-list").innerHTML = '<div class="list-msg">Loading…</div>';
+  showScreen("statistics");
+  $("#analytics-destination-bars").innerHTML = '<div class="analytics-state"><span class="loading-glyph" aria-hidden="true"></span><span>Loading…</span></div>';
   loadUsage();
-  clearInterval(usageTimer);
+  if (usageTimer) clearInterval(usageTimer);
   usageTimer = setInterval(loadUsage, 4000); // stay live while open
 }
 
@@ -711,7 +751,7 @@ function wire() {
   };
   $("#btn-settings").onclick = openSettings;
   $("#btn-account").onclick = openSettings;
-  $("#scrim").onclick = closeSheets;
+  $("#panel-scrim").onclick = closeAppsPanel;
   for (const b of $$("[data-close]")) b.onclick = closeSheets;
 
   const saveSettings = async () => {
@@ -798,14 +838,8 @@ function wire() {
     refreshSnapshot();
   };
 
-  $("#btn-usage").onclick = () => openUsageSheet();
-  $("#usage-search").oninput = renderUsage;
-  $("#usage-list").onclick = (e) => {
-    const row = e.target.closest("[data-app]");
-    if (!row) return;
-    expandedApp = expandedApp === row.dataset.app ? null : row.dataset.app;
-    renderUsage();
-  };
+  $("#btn-usage").onclick = () => openAnalytics();
+  $("#analytics-search").oninput = renderAnalytics;
   $("#btn-usage-reset").onclick = async () => {
     if (!(await askConfirm("Clear the usage history?", "Clear usage history"))) return;
     try {
@@ -855,7 +889,7 @@ function wire() {
     const box = $("#logs");
     box.innerHTML = "";
     for (const l of lines) appendLog(l);
-    openSheet("sheet-logs");
+    showScreen("activity");
     box.scrollTop = box.scrollHeight;
   };
   $("#btn-copy-logs").onclick = () => {

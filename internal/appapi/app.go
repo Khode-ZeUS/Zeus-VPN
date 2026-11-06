@@ -120,7 +120,7 @@ type CountryDTO struct {
 
 // Version is the app version shown in the UI (keep in sync with wails.json
 // and the mobile projects).
-const Version = "1.1.0.9"
+const Version = "1.2.0.0"
 
 // Startup creates the engine; emit delivers events ("state", "stats",
 // "log", "notice") to the UI.

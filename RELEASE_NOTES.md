@@ -1,4 +1,4 @@
-# Zeus VPN 1.1.0.9
+# Zeus VPN 1.2.0.0 (upcoming — draft)
 
 ## What's new
 
@@ -22,7 +22,7 @@ Everything from earlier releases is on board: the data usage panel, honest serve
 |---|---|
 | Windows 10/11 | `ZeusVPN-amd64-installer.exe` (or the portable `ZeusVPN.exe`) |
 | Android 7+ | `ZeusVPN-android-arm64-v8a.apk` (most phones), `-armeabi-v7a` or `-universal` |
-| Linux x86-64 (Ubuntu/Debian/Fedora 36+) | `zeusvpn_1.1.0.9_amd64.deb` or `ZeusVPN-linux-amd64.tar.gz` |
+| Linux x86-64 (Ubuntu/Debian/Fedora 36+) | `zeusvpn_1.2.0.0_amd64.deb` or `ZeusVPN-linux-amd64.tar.gz` |
 | Linux x86-64 (CentOS/RHEL 9, older WebKitGTK) | `ZeusVPN-linux-amd64-gtk40.tar.gz` |
 | macOS (beta) | `ZeusVPN-macos-universal-beta.dmg` |
 | iOS / iPadOS (beta) | `ZeusVPN-ios-unsigned-beta.ipa` |
@@ -46,4 +46,6 @@ Everything from earlier releases is on board: the data usage panel, honest serve
 
 ---
 
-*Previous release: [v1.1.0.8](https://github.com/Khode-ZeUS/Zeus-VPN/releases/tag/v1.1.0.8)*
+*Previous release: [v1.1.0.9](https://github.com/Khode-ZeUS/Zeus-VPN/releases/tag/v1.1.0.9)*
+
+> This draft is still being prepared — the redesign is landing in it before the final release.

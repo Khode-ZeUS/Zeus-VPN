@@ -26,9 +26,15 @@
     </div>
     <div class="form">
       <div class="form-error" id="login-error"></div>
-      <button class="btn primary" type="button" id="login-web"><span>Sign in with Firefox</span></button>
+      <div id="login-direct">
+        <input type="email" id="login-email" placeholder="Email" autocomplete="email" inputmode="email">
+        <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
+        <input type="text" id="login-code" placeholder="Verification code" hidden>
+        <button class="btn primary" type="button" id="login-direct-go"><span>Sign in</span></button>
+      </div>
+      <button class="btn primary" type="button" id="login-web" hidden><span>Sign in with Firefox</span></button>
       <button class="btn ghost" type="button" id="login-cancel" hidden>Cancel</button>
-      <p class="muted small center" id="login-hint">Mozilla's sign-in page opens inside this window — email, password and any verification code or CAPTCHA are handled right there.</p>
+      <p class="muted small center" id="login-hint" hidden>The Mozilla sign-in page opens inside this window. On some networks it needs a VPN connection — connect first, then retry.</p>
     </div>
     <div class="login-foot">
       <p class="muted small">Free with any Mozilla account &middot; 50&nbsp;GB per month</p>

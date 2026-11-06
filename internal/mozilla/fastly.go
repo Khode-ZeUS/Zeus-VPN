@@ -24,7 +24,6 @@ import (
 const (
 	fxaAPIHost          = "https://api.accounts.firefox.com"
 	fxaSiteHost         = "https://accounts.firefox.com"
-	fastlySolverUA      = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 	maxPostBackRounds   = 8
 	powAlphabet         = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	fastlySolverTimeout = 60 * time.Second
@@ -32,6 +31,7 @@ const (
 
 var (
 	challengePrefixRe = regexp.MustCompile(`/_fs-ch-[A-Za-z0-9]+`)
+	initStartRe       = regexp.MustCompile(`\binit\s*\(`)
 	initCallRe        = regexp.MustCompile(`init\((\[[^\]]*\]),\s*"([^"]+)",\s*"([^"]+)"`)
 	solveMu           sync.Mutex
 	errNoChallenge    = errors.New("host did not serve a Fastly challenge page")
@@ -61,9 +61,88 @@ func baseOrigin(prefixURL string) string {
 	return prefixURL
 }
 
+// parseChallengeInit extracts the challenge list and its token from the
+// challenge script's init(...) call. Fastly has shipped two shapes: the
+// legacy one-liner and a newer multi-line call with JavaScript comments
+// between the arguments — both carry JSON after the opening bracket, so the
+// arguments are decoded as JSON instead of being regexed.
+func parseChallengeInit(script, prefix string) ([]map[string]any, string, error) {
+	// Legacy one-liner first: init([{…}], "token", "/_fs-ch-…").
+	if m := initCallRe.FindStringSubmatch(script); m != nil {
+		var legacy []map[string]any
+		if err := json.Unmarshal([]byte(m[1]), &legacy); err == nil && len(legacy) > 0 {
+			return legacy, m[2], nil
+		}
+	}
+	// Current shape: walk every init( occurrence and decode
+	// ([challenges], "token", "prefix") as JSON straight off the script,
+	// keeping the last call whose prefix matches the page's asset prefix.
+	starts := initStartRe.FindAllStringIndex(script, -1)
+	for i := len(starts) - 1; i >= 0; i-- {
+		rest := script[starts[i][1]:]
+		var challenges []map[string]any
+		var token, callPrefix string
+		if !decodeArgs(&rest, &challenges, &token, &callPrefix) {
+			continue
+		}
+		if len(challenges) == 0 || token == "" || strings.Contains(callPrefix, "/_fs-ch-") {
+			return challenges, token, nil
+		}
+	}
+	return nil, "", errors.New("valid challenge init call not found in script")
+}
+
+// decodeArgs JSON-decodes the arguments packed into rest ("[challenges],
+// "token", "prefix""), advancing rest past each one; false when they stop
+// parsing.
+func decodeArgs(rest *string, targets ...any) bool {
+	for i, target := range targets {
+		*rest = skipWSComments(*rest)
+		if i > 0 {
+			if !strings.HasPrefix(*rest, ",") {
+				return false
+			}
+			*rest = skipWSComments((*rest)[1:])
+		}
+		dec := json.NewDecoder(strings.NewReader(*rest))
+		if err := dec.Decode(target); err != nil {
+			return false
+		}
+		*rest = (*rest)[dec.InputOffset():]
+	}
+	return true
+}
+
+// skipWSComments strips whitespace and JavaScript comments from the front
+// of s (the challenge script sprinkles them around the init arguments).
+func skipWSComments(s string) string {
+	for {
+		s = strings.TrimLeft(s, " \t\r\n")
+		switch {
+		case strings.HasPrefix(s, "//"):
+			if i := strings.IndexByte(s, '\n'); i >= 0 {
+				s = s[i+1:]
+				continue
+			}
+			return ""
+		case strings.HasPrefix(s, "/*"):
+			if i := strings.Index(s, "*/"); i >= 0 {
+				s = s[i+2:]
+				continue
+			}
+			return ""
+		}
+		return s
+	}
+}
+
 func fetchText(c *http.Client, u string) (string, error) {
 	req, _ := http.NewRequest("GET", u, nil)
-	req.Header.Set("User-Agent", fastlySolverUA)
+	// The challenge assets are fetched with the SAME user agent the
+	// API calls use: the anti-bot cookie Fastly issues is bound to the
+	// client fingerprint, and a cookie earned as one client is refused
+	// for another.
+	req.Header.Set("User-Agent", firefoxAPIUA)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 	resp, err := c.Do(req)
 	if err != nil {
@@ -93,7 +172,11 @@ func postJSON(c *http.Client, u, origin, accept string, payload any) (*http.Resp
 	req, _ := http.NewRequest("POST", u, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", accept)
-	req.Header.Set("User-Agent", fastlySolverUA)
+	// The challenge assets are fetched with the SAME user agent the
+	// API calls use: the anti-bot cookie Fastly issues is bound to the
+	// client fingerprint, and a cookie earned as one client is refused
+	// for another.
+	req.Header.Set("User-Agent", firefoxAPIUA)
 	req.Header.Set("Origin", origin)
 	resp, err := c.Do(req)
 	if err != nil {
@@ -178,16 +261,10 @@ func solveOnHost(main *http.Client, base string) error {
 	if err != nil {
 		return err
 	}
-	matches := initCallRe.FindAllStringSubmatch(script, -1)
-	if len(matches) == 0 {
-		return errors.New("challenge init() call not found in script")
+	challenges, token, perr := parseChallengeInit(script, prefix)
+	if perr != nil {
+		return perr
 	}
-	last := matches[len(matches)-1]
-	var challenges []map[string]any
-	if err := json.Unmarshal([]byte(last[1]), &challenges); err != nil || len(challenges) == 0 {
-		return errors.New("could not parse challenge list")
-	}
-	token := last[2]
 
 	for round := 0; round < maxPostBackRounds; round++ {
 		answers := make([]map[string]any, 0, len(challenges))

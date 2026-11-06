@@ -78,6 +78,8 @@ type App struct {
 // New must stay side-effect free: `wails build` runs the binary to generate
 // bindings, so all real work starts in Startup.
 func New(p Platform) *App {
+	// Keep the FxA user agent on Mozilla's current Firefox release.
+	go mozilla.RefreshFirefoxVersion()
 	return &App{plat: p}
 }
 

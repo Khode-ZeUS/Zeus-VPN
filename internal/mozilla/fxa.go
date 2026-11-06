@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"zeusvpn/internal/netdiag"
@@ -30,11 +31,13 @@ const (
 	protocolVersion      = "identity.mozilla.com/picl/v1/"
 	maxChallengeAttempts = 5
 
-	// firefoxAPIUA is the User-Agent of desktop Firefox, which Firefox's
-	// built-in VPN sends with every Firefox Accounts request. The edge
-	// block follows the client fingerprint: the old MozillaVPN UA is
-	// refused, the browser-grade one passes.
-	firefoxAPIUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0"
+	// firefoxDefaultUA is the User-Agent of desktop Firefox, which
+	// Firefox's built-in VPN sends with every Firefox Accounts request.
+	// The edge block follows the client fingerprint: the old MozillaVPN UA
+	// is refused, the browser-grade one passes. The version is refreshed
+	// from Mozilla's product details (RefreshFirefoxVersion) so it never
+	// falls far behind.
+	firefoxDefaultUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0"
 
 	ErrnoAccountUnknown    = 102
 	ErrnoIncorrectPassword = 103
@@ -129,6 +132,43 @@ func hawkHeader(method string, u *url.URL, sessionTokenHex string, body []byte) 
 	return header, nil
 }
 
+var firefoxUA atomic.Value // string
+
+func init() { firefoxUA.Store(firefoxDefaultUA) }
+
+// firefoxUserAgent is the desktop Firefox User-Agent the FxA requests and
+// the challenge solver send.
+func firefoxUserAgent() string {
+	if v := firefoxUA.Load(); v != nil {
+		return v.(string)
+	}
+	return firefoxDefaultUA
+}
+
+// RefreshFirefoxVersion updates the User-Agent to Mozilla's current Firefox
+// release (product details), best effort and silent on failure.
+func RefreshFirefoxVersion() {
+	req, _ := http.NewRequest("GET", "https://product-details.mozilla.org/1.0/firefox_versions.json", nil)
+	req.Header.Set("Accept", "application/json")
+	client := &http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	var out struct {
+		LATEST_FIREFOX_VERSION string `json:"LATEST_FIREFOX_VERSION"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&out) != nil {
+		return
+	}
+	v := strings.TrimSpace(out.LATEST_FIREFOX_VERSION)
+	if v == "" || strings.Trim(v, "0123456789.") != "" {
+		return
+	}
+	firefoxUA.Store(fmt.Sprintf("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:%s) Gecko/20100101 Firefox/%s", v, v))
+}
+
 // fxaDo sends an FxA request as desktop Firefox would, solving Fastly's
 // challenge on HTTP 406. The Hawk header is rebuilt on every attempt so its
 // timestamp stays fresh.
@@ -145,7 +185,7 @@ func fxaDo(method, path, sessionToken string, payload any) (map[string]any, erro
 	for attempt := 0; attempt < maxChallengeAttempts; attempt++ {
 		req, _ := http.NewRequest(method, u.String(), bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", firefoxAPIUA)
+		req.Header.Set("User-Agent", firefoxUserAgent())
 		req.Header.Set("Accept", "application/json")
 		if sessionToken != "" {
 			h, err := hawkHeader(method, u, sessionToken, body)

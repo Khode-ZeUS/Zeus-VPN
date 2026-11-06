@@ -142,7 +142,7 @@ func fetchText(c *http.Client, u string) (string, error) {
 	// API calls use: the anti-bot cookie Fastly issues is bound to the
 	// client fingerprint, and a cookie earned as one client is refused
 	// for another.
-	req.Header.Set("User-Agent", firefoxAPIUA)
+	req.Header.Set("User-Agent", firefoxUserAgent())
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 	resp, err := c.Do(req)
 	if err != nil {
@@ -176,7 +176,7 @@ func postJSON(c *http.Client, u, origin, accept string, payload any) (*http.Resp
 	// API calls use: the anti-bot cookie Fastly issues is bound to the
 	// client fingerprint, and a cookie earned as one client is refused
 	// for another.
-	req.Header.Set("User-Agent", firefoxAPIUA)
+	req.Header.Set("User-Agent", firefoxUserAgent())
 	req.Header.Set("Origin", origin)
 	resp, err := c.Do(req)
 	if err != nil {

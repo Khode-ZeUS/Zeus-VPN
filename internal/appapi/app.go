@@ -434,11 +434,41 @@ func (a *App) CancelLogin() {
 	a.emitState()
 }
 
+// HasAccount reports whether any Mozilla account is set up.
+func (a *App) HasAccount() bool {
+	return a.eng.Auth.LoggedIn()
+}
+
 // NetworkDiagnostics returns the recent connection diagnostics events: the
 // DNS, TCP, TLS, certificate and HTTP stages with their per-stage error
 // codes and durations (the Connection Diagnostics view).
 func (a *App) NetworkDiagnostics() []netdiag.Event {
 	return netdiag.Snapshot()
+}
+
+// ConnectAndWait connects with the existing account and waits for the
+// tunnel to come up, so a follow-up sign-in rides the tunnel's exit
+// instead of the local fingerprint+IP (Mozilla's edge rate-limits
+// repeated direct sign-ins from one). Reports whether it came up.
+func (a *App) ConnectAndWait(timeout time.Duration) bool {
+	if active(a.state().Status) {
+		return true
+	}
+	if err := a.Connect(); err != nil {
+		a.eng.Log("warning", "could not connect before the sign-in: "+err.Error())
+		return false
+	}
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		time.Sleep(300 * time.Millisecond)
+		switch a.state().Status {
+		case core.StatusConnected:
+			return true
+		case core.StatusDisconnected:
+			return false // the connect failed
+		}
+	}
+	return false
 }
 
 // ResetNetworkConfig forgets the learned network choices (which bootstrap

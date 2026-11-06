@@ -309,6 +309,111 @@ func OAuthToken(sessionToken string) (*TokenResponse, error) {
 		"client_id": firefoxClientID, "grant_type": "fxa-credentials", "scope": oauthScope, "access_type": "offline",
 	})
 	if err != nil {
+		// The edge refuses the direct session-to-token exchange on some
+		// networks: FxA's session-authenticated authorization-code grant
+		// (PKCE) goes through where the fxa-credentials grant does not.
+		if t, cerr := OAuthTokenViaCode(sessionToken); cerr == nil {
+			return t, nil
+		}
+		return nil, err
+	}
+	return tokenFrom(data, ""), nil
+}
+
+// oauthAuthorizationViaSession requests an OAuth authorization code with
+// the session token itself (Hawk-signed) — FxA's session-authenticated
+// code grant — and returns the code with its PKCE verifier. It goes
+// through the same 406/challenge handling as every FxA request.
+func oauthAuthorizationViaSession(sessionToken string) (string, string, error) {
+	verifierBytes := make([]byte, 32)
+	if _, err := rand.Read(verifierBytes); err != nil {
+		return "", "", fmt.Errorf("generating the code verifier: %w", err)
+	}
+	verifier := base64.RawURLEncoding.EncodeToString(verifierBytes)
+	sum := sha256.Sum256([]byte(verifier))
+	stateBytes := make([]byte, 16)
+	if _, err := rand.Read(stateBytes); err != nil {
+		return "", "", err
+	}
+	state := hex.EncodeToString(stateBytes)
+	body, _ := json.Marshal(map[string]any{
+		"client_id": firefoxClientID, "response_type": "code", "scope": oauthScope,
+		"state": state, "access_type": "offline",
+		"code_challenge":         base64.RawURLEncoding.EncodeToString(sum[:]),
+		"code_challenge_method": "S256",
+	})
+	u := mustURL(fxaAuthServer + "/oauth/authorization")
+	c := Client()
+	var resp *http.Response
+	var respBody []byte
+	var lastNetErr error
+	for attempt := 0; attempt < maxChallengeAttempts; attempt++ {
+		req, _ := http.NewRequest("POST", u.String(), bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", firefoxUserAgent())
+		req.Header.Set("Accept", "application/json")
+		h, herr := hawkHeader("POST", u, sessionToken, body)
+		if herr != nil {
+			return "", "", herr
+		}
+		req.Header.Set("Authorization", h)
+		var err error
+		resp, err = c.Do(req)
+		if err != nil {
+			if req.Context().Err() != nil {
+				return "", "", fmt.Errorf("could not reach Firefox Accounts: %w", err)
+			}
+			// Transient network cut: fresh connections and try again.
+			lastNetErr = err
+			resp, respBody = nil, nil
+			ResetConnections()
+			time.Sleep(700 * time.Millisecond)
+			continue
+		}
+		respBody = readBody(resp, 16<<10)
+		resp.Body.Close()
+		if resp.StatusCode != 406 {
+			break
+		}
+		if err := solveFastlyChallenge(c); err != nil {
+			if errors.Is(err, errNoChallenge) && !strings.Contains(string(respBody), "_fs-ch-") {
+				break
+			}
+			return "", "", fmt.Errorf("Mozilla anti-bot check failed: %w", err)
+		}
+	}
+	if resp == nil {
+		if lastNetErr == nil {
+			lastNetErr = errors.New("no response")
+		}
+		return "", "", fmt.Errorf("could not reach Firefox Accounts: %w", lastNetErr)
+	}
+	if resp.StatusCode != 200 {
+		return "", "", &FxaError{Message: fmt.Sprintf("OAuth authorization: HTTP %d", resp.StatusCode), Status: resp.StatusCode}
+	}
+	var out struct {
+		Code  string `json:"code"`
+		State string `json:"state"`
+	}
+	if json.Unmarshal(respBody, &out) != nil || out.Code == "" || out.State != state {
+		return "", "", errors.New("invalid OAuth authorization response")
+	}
+	return out.Code, verifier, nil
+}
+
+// OAuthTokenViaCode exchanges the session for tokens through the
+// authorization-code grant with PKCE — the path that goes through where
+// the direct fxa-credentials exchange is refused at the edge.
+func OAuthTokenViaCode(sessionToken string) (*TokenResponse, error) {
+	code, verifier, err := oauthAuthorizationViaSession(sessionToken)
+	if err != nil {
+		return nil, err
+	}
+	data, err := fxaDo("POST", "/oauth/token", "", map[string]any{
+		"client_id": firefoxClientID, "grant_type": "authorization_code",
+		"code": code, "code_verifier": verifier,
+	})
+	if err != nil {
 		return nil, err
 	}
 	return tokenFrom(data, ""), nil

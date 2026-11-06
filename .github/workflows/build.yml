@@ -222,4 +222,4 @@ jobs:
         with:
           files: dist/*
           body_path: RELEASE_NOTES.md
-          draft: true
+          draft: false

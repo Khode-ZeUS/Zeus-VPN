@@ -578,66 +578,6 @@ async function startWebLogin() {
   }
 }
 
-// ---------- direct sign-in (mobile): the engine signs in and answers
-// Mozilla's edge challenge itself; the flow may need an unblock code, an
-// emailed code or an email confirmation link ----------
-let loginStep = null;
-
-function loginStepUI(res) {
-  loginStep = (res && res.step) || "done";
-  $("#login-error").textContent = (res && res.message) || "";
-  const needCode = loginStep === "unblock" || loginStep === "code" || loginStep === "link";
-  $("#login-code").hidden = !needCode;
-  $("#login-code").placeholder = loginStep === "unblock" ? "Unblock code from the email"
-    : loginStep === "link" ? "Press continue after opening the link"
-    : "6-digit code from the email";
-  $("#login-direct-go").querySelector("span").textContent =
-    needCode ? "Continue" : "Sign in";
-  if (loginStep === "done") {
-    $("#login-email").value = "";
-    $("#login-password").value = "";
-    $("#login-code").value = "";
-    loginStep = null;
-    addingAccount = false;
-    render();
-  }
-}
-
-async function directLogin() {
-  const email = $("#login-email").value.trim();
-  const password = $("#login-password").value;
-  if (!email || !password) {
-    $("#login-error").textContent = "Enter your email and password.";
-    return;
-  }
-  $("#login-error").textContent = "Signing in…";
-  try {
-    loginStepUI(await api().Login(email, password));
-  } catch (e) {
-    const msg = errText(e);
-    $("#login-error").textContent = msg;
-    // Mozilla's edge refuses the direct route on some networks (and is
-    // intermittent about it): keep the web page as the visible fallback.
-    if (msg.indexOf("edge") !== -1 || msg.indexOf("anti-bot") !== -1) {
-      $("#login-web").hidden = false;
-      $("#login-web").querySelector("span").textContent = "Sign in with the Firefox page instead";
-    }
-  }
-}
-
-async function continueLogin() {
-  const code = $("#login-code").value.trim();
-  $("#login-error").textContent = "Signing in…";
-  try {
-    const res = loginStep === "unblock" ? await api().SubmitUnblock(code)
-      : loginStep === "link" ? await api().ConfirmLink()
-      : await api().VerifyCode(code);
-    loginStepUI(res);
-  } catch (e) {
-    $("#login-error").textContent = errText(e);
-  }
-}
-
 // ---------- wiring ----------
 function wire() {
   $("#btn-min").onclick = () => window.runtime.WindowMinimise();
@@ -646,15 +586,9 @@ function wire() {
   $("#orb").onclick = toggleConnection;
   $("#link-signup").onclick = (e) => { e.preventDefault(); api().OpenURL("https://accounts.firefox.com/signup"); };
   $("#login-web").onclick = startWebLogin;
-  $("#login-direct-go").onclick = () => (loginStep ? continueLogin() : directLogin());
-  $("#login-code").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") $("#login-direct-go").onclick();
-  });
   $("#login-cancel").onclick = () => {
     addingAccount = false;
-    loginStep = null;
     $("#login-error").textContent = "";
-    try { api().CancelLogin(); } catch (e) {}
     render();
     if (snap.loggedIn) openSheet("sheet-settings");
   };

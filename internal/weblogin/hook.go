@@ -80,7 +80,11 @@ const webChannelForward = `var forward = function(detail) {
       if (msg.messageId) reply(msg.messageId, cmd, {ok:true});
       if (!token) return;
       if (verified) {
-        zeusExchange(token, email);
+        // Deliver the session right away: the engine exchanges it for
+        // tokens itself (the page's own post-login navigation can land on
+        // its clientId validation error — the app leaves the page before
+        // that matters).
+        __deliver('session?token=' + encodeURIComponent(token) + '&email=' + encodeURIComponent(email) + '&verified=1');
       } else {
         try { sessionStorage.setItem('zeusToken', token);
               sessionStorage.setItem('zeusEmail', email); } catch (e) {}

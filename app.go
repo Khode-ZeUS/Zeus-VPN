@@ -93,6 +93,11 @@ func (a *App) StartWebLogin(returnURL string) error {
 			select {
 			case res := <-wl.Result():
 				finished = true
+				// Leave the FxA page right away: its own post-login
+				// navigation can land on its clientId validation error —
+				// the session is already in and the token exchange
+				// continues here in the engine.
+				execJS(`window.location.replace(` + jsString(returnURL) + `);`)
 				var lerr error
 				switch {
 				case res.Err != nil:

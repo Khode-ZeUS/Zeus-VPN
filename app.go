@@ -50,16 +50,6 @@ func (a *App) StartWebLogin(returnURL string) error {
 	if returnURL == "" {
 		returnURL = "http://wails.localhost/index.html"
 	}
-	// Adding an account while disconnected: Mozilla's edge rate-limits
-	// repeated direct sign-ins from this fingerprint+IP (the first one
-	// succeeds, the next ones were refused on device) — connect with the
-	// existing account first so this sign-in rides the tunnel's exit
-	// instead. Best effort: when it does not come up, the direct path is
-	// still attempted.
-	if a.App.HasAccount() {
-		a.App.Log("info", "web sign-in: connecting first so the sign-in rides the tunnel")
-		a.App.ConnectAndWait(45 * time.Second)
-	}
 	wl, err := weblogin.Start()
 	if err != nil {
 		return err

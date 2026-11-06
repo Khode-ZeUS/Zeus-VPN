@@ -614,7 +614,14 @@ async function directLogin() {
   try {
     loginStepUI(await api().Login(email, password));
   } catch (e) {
-    $("#login-error").textContent = errText(e);
+    const msg = errText(e);
+    $("#login-error").textContent = msg;
+    // Mozilla's edge refuses the direct route on some networks (and is
+    // intermittent about it): keep the web page as the visible fallback.
+    if (msg.indexOf("edge") !== -1 || msg.indexOf("anti-bot") !== -1) {
+      $("#login-web").hidden = false;
+      $("#login-web").querySelector("span").textContent = "Sign in with the Firefox page instead";
+    }
   }
 }
 

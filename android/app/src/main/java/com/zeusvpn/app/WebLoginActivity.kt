@@ -7,6 +7,7 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.CookieManager
 import androidx.webkit.WebViewCompat
 import org.json.JSONObject
 
@@ -67,6 +68,13 @@ class WebLoginActivity : Activity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Each sign-in looks like a fresh browser to Mozilla: the previous
+        // web login's cookies (its signed-in state) would otherwise change
+        // how the page treats the next account.
+        CookieManager.getInstance().apply {
+            removeAllCookies(null)
+            flush()
+        }
         web = WebView(this)
         setContentView(web)
         web.settings.apply {

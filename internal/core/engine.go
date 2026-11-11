@@ -855,35 +855,34 @@ func (c *probeTraffic) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func (e *Engine) probeConnection(ctx context.Context, up *tunnel.Upstream) (ip, country string, err error) {
+func (e *Engine) probeConnection(ctx context.Context, up *tunnel.Upstream) (string, string, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	targets := []string{exitProbeURL, "https://www.gstatic.com/generate_204", "https://example.com/"}
 	type result struct {
-		target, ip, country, details string
-		err                          error
+		ip, country string
+		err         error
 	}
 	results := make(chan result, len(targets))
 	for _, target := range targets {
 		go func(target string) {
-			var details string
-			ip, country, err := probeExit(ctx, up, target, func(s string) { details = s })
-			results <- result{target, ip, country, target + " · " + details, err}
+			ip, country, err := probeExit(ctx, up, target, nil)
+			results <- result{ip, country, err}
 		}(target)
 	}
-	passed := 0
+	var failures []error
 	for range targets {
-		r := <-results
-		if r.target == exitProbeURL {
-			ip, country, err = r.ip, r.country, r.err
+		select {
+		case <-ctx.Done():
+			return "", "", ctx.Err()
+		case r := <-results:
+			if r.err == nil {
+				return r.ip, r.country, nil
+			}
+			failures = append(failures, r.err)
 		}
-		if r.err != nil {
-			e.Log("warning", r.details+" · "+r.err.Error())
-			continue
-		}
-		passed++
-		e.Log("info", r.details)
 	}
-	e.Log("info", fmt.Sprintf("VPN HTTPS diagnostics: %d/%d destinations passed", passed, len(targets)))
-	return
+	return "", "", errors.Join(failures...)
 }
 
 func probeExit(ctx context.Context, up *tunnel.Upstream, target string, report func(string)) (string, string, error) {

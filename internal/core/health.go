@@ -26,7 +26,7 @@ func (e *Engine) probe(ctx context.Context) error {
 	if up == nil {
 		return errors.New("no tunnel")
 	}
-	_, _, err := probeExit(ctx, up, exitProbeURL, nil)
+	_, _, err := e.probeConnection(ctx, up)
 	return err
 }
 

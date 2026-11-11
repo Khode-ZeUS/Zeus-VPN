@@ -230,6 +230,9 @@ function render() {
   renderAccounts();
   const relay = snap.settings.relay_proxy || "";
   const windowsRelay = snap.platform === "windows";
+  if (snap.platform === "android" || snap.platform === "ios") {
+    $("#login-web").hidden = false;
+  }
   $("#login-relay").hidden = $("#set-relay-row").hidden = !windowsRelay;
   for (const id of ["#login-relay-url", "#set-relay"]) {
     if (document.activeElement !== $(id)) $(id).value = relay;
@@ -605,6 +608,7 @@ async function elevate() {
 
 // ---------- web sign-in (the API password route is edge-blocked) ----------
 async function startWebLogin() {
+  const mobile = snap?.platform === "android" || snap?.platform === "ios";
   if (webLoginPending) return;
   webLoginPending = true;
   $("#login-web").disabled = true;
@@ -616,6 +620,14 @@ async function startWebLogin() {
     webLoginPending = false;
     $("#login-web").disabled = false;
     $("#login-error").textContent = errText(e);
+  } finally {
+    if (mobile) {
+      webLoginPending = false;
+      $("#login-web").disabled = false;
+      if ($("#login-error").textContent === "Opening the Firefox sign-in page…") {
+        $("#login-error").textContent = "";
+      }
+    }
   }
 }
 

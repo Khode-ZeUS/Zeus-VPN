@@ -64,6 +64,7 @@ final class WebLoginViewController: UIViewController, WKScriptMessageHandler, WK
                 params[String(kv[0])] = String(kv[1]).removingPercentEncoding
             }
         }
+        if kind == "session", params["verified"] == "0" { return }
         DispatchQueue.global(qos: .userInitiated).async {
             var error: NSError?
             switch kind {

@@ -51,6 +51,7 @@ class WebLoginActivity : Activity() {
                             setResult(RESULT_OK)
                         }
                         "session" -> {
+                            if (params["verified"] == "0") return@runOnUiThread
                             Core.call("CompleteWebLogin",
                                 "[${JSONObject.quote(params["email"] ?: "")}, ${JSONObject.quote(params["token"] ?: "")}]")
                             setResult(RESULT_OK)

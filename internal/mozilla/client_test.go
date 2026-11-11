@@ -43,6 +43,25 @@ func TestViaTunnelFallsBackOnDirectFailure(t *testing.T) {
 	}
 }
 
+func TestRequiredRelayDoesNotFallback(t *testing.T) {
+	offline := errors.New("relay unavailable")
+	direct, vpn, system := &fakeRT{}, &fakeRT{}, &fakeRT{}
+	relay := &fakeRT{err: offline}
+	rt := viaTunnel{
+		direct:      direct,
+		relay:       func() http.RoundTripper { return relay },
+		tunnel:      func() http.RoundTripper { return vpn },
+		systemProxy: func() http.RoundTripper { return system },
+	}
+	req, _ := http.NewRequest("POST", "https://api.accounts.firefox.com/v1/account/login", strings.NewReader(`{}`))
+	if _, err := rt.RoundTrip(req); !errors.Is(err, offline) {
+		t.Fatalf("sign-in request returned %v, want relay error", err)
+	}
+	if relay.calls != 1 || direct.calls+vpn.calls+system.calls != 0 {
+		t.Fatalf("calls: relay=%d direct=%d vpn=%d system=%d", relay.calls, direct.calls, vpn.calls, system.calls)
+	}
+}
+
 func TestViaTunnelWithoutTunnelReturnsError(t *testing.T) {
 	direct := &fakeRT{err: errors.New("timeout")}
 	rt := viaTunnel{direct: direct, tunnel: func() http.RoundTripper { return nil }}

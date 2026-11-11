@@ -4,6 +4,7 @@ build/windows/installer/tmp/
 build/windows/installer/wails_tools.nsh
 frontend/wailsjs/
 *.exe
+worker/.wrangler/
 
 # Local tooling and environments
 .venv/

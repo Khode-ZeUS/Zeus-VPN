@@ -43,6 +43,8 @@ type Settings struct {
 	// endpoints when the direct path fails on their network:
 	// "socks5://host:port" or "http://host:port". Empty = none.
 	UpstreamProxy string `json:"upstream_proxy,omitempty"`
+	// RelayProxy is the user's required first hop for Mozilla connections.
+	RelayProxy string `json:"relay_proxy,omitempty"`
 }
 
 func DefaultSettings() Settings {
@@ -51,12 +53,14 @@ func DefaultSettings() Settings {
 
 // Account is one Mozilla account with its sign-in and last known data quota.
 type Account struct {
-	Email      string    `json:"email"`
-	Tokens     Tokens    `json:"tokens"`
-	QuotaLimit int64     `json:"quota_limit"`
-	QuotaLeft  int64     `json:"quota_left"`
-	QuotaReset time.Time `json:"quota_reset"`
-	QuotaAt    time.Time `json:"quota_at"`
+	Email          string    `json:"email"`
+	Tokens         Tokens    `json:"tokens"`
+	QuotaLimit     int64     `json:"quota_limit"`
+	QuotaLeft      int64     `json:"quota_left"`
+	QuotaReset     time.Time `json:"quota_reset"`
+	QuotaAt        time.Time `json:"quota_at"`
+	QuotaStamp     string    `json:"quota_stamp,omitempty"`
+	QuotaLocalUsed int64     `json:"quota_local_used,omitempty"`
 	// Exhausted is set when Mozilla refused service for lack of quota; it
 	// clears once QuotaReset has passed.
 	Exhausted  bool `json:"exhausted"`

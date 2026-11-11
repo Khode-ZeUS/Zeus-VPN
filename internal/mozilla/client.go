@@ -49,6 +49,12 @@ func Client() *http.Client {
 		jar, _ := cookiejar.New(&cookiejar.Options{PublicSuffixList: publicsuffix.List})
 		rt := viaTunnel{
 			direct: retryOnBlock{transport},
+			relay: func() http.RoundTripper {
+				if r := relayTransport.Load(); r != nil {
+					return r
+				}
+				return nil
+			},
 			tunnel: func() http.RoundTripper {
 				if t := tunnelTransport.Load(); t != nil {
 					return t
@@ -65,6 +71,29 @@ func Client() *http.Client {
 // tunnelTransport reaches Mozilla's endpoints through the VPN itself; set
 // while connected.
 var tunnelTransport atomic.Pointer[http.Transport]
+
+type relayHTTPTransport struct {
+	*http.Transport
+	firefox firefoxTransport
+}
+
+var relayTransport atomic.Pointer[relayHTTPTransport]
+
+// SetRelay gives Mozilla requests an exclusive route, including sign-in,
+// token exchange, server discovery and pass renewal.
+func SetRelay(dial func(context.Context, string, string) (net.Conn, error)) {
+	var t *relayHTTPTransport
+	if dial != nil {
+		t = &relayHTTPTransport{Transport: &http.Transport{
+			DialContext: dial, ForceAttemptHTTP2: true,
+			TLSHandshakeTimeout: 15 * time.Second, IdleConnTimeout: 60 * time.Second,
+		}, firefox: newFirefoxTransport(dial)}
+	}
+	if old := relayTransport.Swap(t); old != nil {
+		old.CloseIdleConnections()
+		old.firefox.closeIdle()
+	}
+}
 
 // SetTunnel lets control-plane requests fall back to the VPN tunnel when the
 // direct path fails (Mozilla's API hosts are intermittently filtered). Pass
@@ -149,11 +178,17 @@ func (r retryOnBlock) RoundTrip(req *http.Request) (*http.Response, error) {
 // the operating system has configured (another VPN tool the user runs).
 type viaTunnel struct {
 	direct      http.RoundTripper
+	relay       func() http.RoundTripper
 	tunnel      func() http.RoundTripper
 	systemProxy func() http.RoundTripper
 }
 
 func (v viaTunnel) RoundTrip(req *http.Request) (*http.Response, error) {
+	if v.relay != nil {
+		if relay := v.relay(); relay != nil {
+			return relay.RoundTrip(req)
+		}
+	}
 	resp, err := v.direct.RoundTrip(req)
 	retryable := false
 	switch {
@@ -246,8 +281,16 @@ func systemProxyTransport() http.RoundTripper {
 // ResetConnections drops pooled connections, e.g. after the outbound
 // interface binding changes.
 func ResetConnections() {
+	if relay := firefoxHTTPRelay.Load(); relay != nil {
+		relay.transport.CloseIdleConnections()
+	}
 	Client()
 	transport.CloseIdleConnections()
+	directFirefox.closeIdle()
+	if relay := relayTransport.Load(); relay != nil {
+		relay.CloseIdleConnections()
+		relay.firefox.closeIdle()
+	}
 }
 
 func applyHeaders(h http.Header) {

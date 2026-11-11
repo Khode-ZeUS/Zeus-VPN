@@ -1,6 +1,8 @@
 package core
 
 import (
+	"context"
+	"net"
 	"net/netip"
 
 	"zeusvpn/internal/mozilla"
@@ -26,6 +28,10 @@ type RouteProtector interface {
 	UpdateProtected(addrs []netip.Addr, port int)
 }
 
+type relayEdgeBinder interface {
+	RelayEdgeDialer() func(context.Context, string, string) (net.Conn, error)
+}
+
 type TunConfig struct {
 	// Dial opens a connection through the VPN server.
 	Dial    tunnel.DialFunc
@@ -43,6 +49,7 @@ type TunConfig struct {
 	// inside the tunnel it is carrying.
 	Protect     []netip.Addr
 	ProtectPort int
+	WorkerHost  string
 	// AppTunnelMode ("all", "include" or "exclude") and Apps (Android
 	// package names) select which apps the system VPN captures; only the
 	// mobile VPN APIs can filter per app.
@@ -75,13 +82,18 @@ func (t *localTun) Prepare() error {
 func (t *localTun) Start(cfg TunConfig) error {
 	v, err := vpn.Start(t.binding, vpn.Options{
 		Dial: cfg.Dial, Forward: cfg.Forward, BypassIran: cfg.BypassIran,
-		ExcludeLAN: cfg.BypassLAN, Protect: cfg.Protect, ProtectPort: cfg.ProtectPort, Log: cfg.Log,
+		ExcludeLAN: cfg.BypassLAN, Protect: cfg.Protect, ProtectPort: cfg.ProtectPort,
+		WorkerHost: cfg.WorkerHost, Log: cfg.Log,
 	})
 	if err != nil {
 		return err
 	}
 	t.vpn, t.port = v, cfg.ProtectPort
 	return nil
+}
+
+func (t *localTun) RelayEdgeDialer() func(context.Context, string, string) (net.Conn, error) {
+	return t.binding.DialRelayEdge
 }
 
 func (t *localTun) UpdateProtected(addrs []netip.Addr, port int) {

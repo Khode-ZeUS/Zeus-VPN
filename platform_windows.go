@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -96,8 +97,16 @@ func platformOptions(o *options.App) {
 	}
 }
 
-// runSpecialMode handles command lines that don't open the window.
-func runSpecialMode() bool { return false }
+func runSpecialMode() bool {
+	if len(os.Args) == 2 && os.Args[1] == relayLoginHelperArg {
+		if err := runRelayLoginHelper(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return true
+	}
+	return false
+}
 
 func openLogFile() {
 	exec.Command("explorer.exe", "/select,", core.LogPath()).Start()

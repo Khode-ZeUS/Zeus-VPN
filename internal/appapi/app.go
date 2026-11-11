@@ -5,11 +5,13 @@
 package appapi
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,6 +29,8 @@ import (
 type Platform struct {
 	// Name is "windows", "macos", "linux", "android" or "ios".
 	Name           string
+	Version        string
+	ManagedRelay   string
 	Autostart      func() bool
 	SetAutostart   func(bool) error
 	RestartAsAdmin func() error
@@ -73,13 +77,19 @@ type App struct {
 	extState *core.State
 	extUp    int64
 	extDown  int64
+
+	loginMu       sync.Mutex
+	loginCancel   context.CancelFunc
+	captchaID     uint64
+	captchaAnswer chan string
 }
 
 // New must stay side-effect free: `wails build` runs the binary to generate
 // bindings, so all real work starts in Startup.
 func New(p Platform) *App {
-	// Keep the FxA user agent on Mozilla's current Firefox release.
-	go mozilla.RefreshFirefoxVersion()
+	if p.Version == "" {
+		p.Version = Version
+	}
 	return &App{plat: p}
 }
 
@@ -103,8 +113,9 @@ type Stats struct {
 	DownRate int64 `json:"downRate"`
 	// Remaining monthly data, counted down live between server refreshes.
 	// QuotaLimit is 0 when unknown; the UI falls back to the snapshot then.
-	QuotaLimit int64 `json:"quotaLimit"`
-	QuotaLeft  int64 `json:"quotaLeft"`
+	QuotaLimit int64  `json:"quotaLimit"`
+	QuotaLeft  int64  `json:"quotaLeft"`
+	Account    string `json:"account,omitempty"`
 }
 
 type CityDTO struct {
@@ -120,13 +131,15 @@ type CountryDTO struct {
 
 // Version is the app version shown in the UI (keep in sync with wails.json
 // and the mobile projects).
-const Version = "1.1.0.9"
+const Version = "1.2.0.0"
 
 // Startup creates the engine; emit delivers events ("state", "stats",
 // "log", "notice") to the UI.
 func Startup(a *App, emit func(event string, data any)) {
 	a.emit = emit
-	a.eng = core.NewEngine()
+	a.eng = core.NewEngineWithManagedRelay(a.plat.ManagedRelay)
+	// The version check must use the selected relay too.
+	go mozilla.RefreshFirefoxVersion()
 	a.eng.OnState = func(core.State) { a.emitState() }
 	a.eng.OnLog = func(line string) { emit("log", line) }
 	a.eng.OnNotice = func(msg string) { emit("notice", msg) }
@@ -230,14 +243,9 @@ func (a *App) statsLoop() {
 		if up < lastUp || down < lastDown {
 			lastUp, lastDown = 0, 0
 		}
-		limit, left := a.liveQuota()
-		a.emit("stats", Stats{Up: up, Down: down, UpRate: up - lastUp, DownRate: down - lastDown, QuotaLimit: limit, QuotaLeft: left})
+		account, limit, left := a.liveQuota()
+		a.emit("stats", Stats{Up: up, Down: down, UpRate: up - lastUp, DownRate: down - lastDown, QuotaLimit: limit, QuotaLeft: left, Account: account})
 		lastUp, lastDown = up, down
-		// Every 5 minutes while connected, re-read the account's remaining
-		// data from Mozilla: other clients of the same account consume it too.
-		if tick%300 == 0 && tick > 0 && a.plat.External == nil {
-			go a.eng.RefreshActiveQuota()
-		}
 		if tick%60 == 0 && tick > 0 {
 			usage.SaveHosts()
 		}
@@ -248,9 +256,9 @@ func (a *App) statsLoop() {
 // between server refreshes. Where the connection runs in another process
 // (iOS) the engine knows no counters, so unknown (0) is reported and the
 // UI falls back to the snapshot.
-func (a *App) liveQuota() (limit, left int64) {
+func (a *App) liveQuota() (account string, limit, left int64) {
 	if a.plat.External != nil || a.eng == nil {
-		return 0, 0
+		return "", 0, 0
 	}
 	return a.eng.LiveQuota()
 }
@@ -310,7 +318,7 @@ func (a *App) GetSnapshot() Snapshot {
 		Settings:  s,
 		Elevated:  !core.TunNeedsElevation || core.IsElevated(),
 		Autostart: autostart,
-		Version:   Version,
+		Version:   a.plat.Version,
 		Platform:  a.plat.Name,
 		Features:  a.features(),
 	}
@@ -397,39 +405,114 @@ func (a *App) WebLoginFinished(email string, err error) {
 		a.eng.SetError("Web sign-in failed: " + err.Error())
 		return
 	}
-	a.emitState()
+	a.eng.SetError("")
 }
 
 // Direct sign-in with email and password: the engine talks to Firefox
-// Accounts itself and answers Mozilla's edge challenge when it appears. The
-// desktop UI keeps using the web sign-in; these steps power the mobile
-// forms. Each call returns one step of the possibly multi-step flow (an
-// unblock code, an emailed code, or an email confirmation link).
+// Accounts itself. Each call returns the next step when Mozilla asks for
+// email verification or requires the account to unblock the sign-in.
 func (a *App) Login(email, password string) (*core.LoginStep, error) {
-	step, err := a.eng.Auth.Login(email, password)
-	a.emitState()
-	return step, err
+	return a.runLogin(func(ctx context.Context) (*core.LoginStep, error) {
+		return a.eng.Auth.Login(ctx, email, password)
+	})
 }
 
 func (a *App) VerifyCode(code string) (*core.LoginStep, error) {
-	step, err := a.eng.Auth.VerifyCode(code)
-	a.emitState()
-	return step, err
+	return a.runLogin(func(ctx context.Context) (*core.LoginStep, error) {
+		return a.eng.Auth.VerifyCode(ctx, code)
+	})
+}
+
+func (a *App) ContinueVerifiedLogin() (*core.LoginStep, error) {
+	return a.runLogin(a.eng.Auth.ContinueVerifiedLogin)
 }
 
 func (a *App) ConfirmLink() (*core.LoginStep, error) {
-	step, err := a.eng.Auth.ConfirmLink()
-	a.emitState()
-	return step, err
+	return a.runLogin(a.eng.Auth.ConfirmLink)
 }
 
 func (a *App) SubmitUnblock(code string) (*core.LoginStep, error) {
-	step, err := a.eng.Auth.SubmitUnblock(code)
+	return a.runLogin(func(ctx context.Context) (*core.LoginStep, error) {
+		return a.eng.Auth.SubmitUnblock(ctx, code)
+	})
+}
+
+func (a *App) runLogin(run func(context.Context) (*core.LoginStep, error)) (*core.LoginStep, error) {
+	a.loginMu.Lock()
+	if a.loginCancel != nil {
+		a.loginMu.Unlock()
+		return nil, errors.New("sign-in is already in progress")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	a.loginCancel = cancel
+	a.loginMu.Unlock()
+	defer func() {
+		cancel()
+		a.loginMu.Lock()
+		a.loginCancel = nil
+		a.loginMu.Unlock()
+	}()
+	ctx = mozilla.WithCaptchaPrompt(ctx, a.promptCaptcha)
+	step, err := run(ctx)
 	a.emitState()
+	if errors.Is(err, mozilla.ErrVerificationRejected) {
+		a.eng.Log("warning", "Mozilla rejected the sign-in verification (HTTP 400)")
+		return nil, errors.New("Mozilla's anti-bot check rejected this verification (HTTP 400). If the Firefox sign-in page is available, open it to complete verification. Otherwise, try signing in again.")
+	}
 	return step, err
 }
 
+type loginCaptcha struct {
+	ID    uint64 `json:"id"`
+	Image string `json:"image"`
+}
+
+func (a *App) promptCaptcha(ctx context.Context, image string) (string, error) {
+	answer := make(chan string, 1)
+	a.loginMu.Lock()
+	a.captchaID++
+	prompt := loginCaptcha{ID: a.captchaID, Image: image}
+	a.captchaAnswer = answer
+	a.loginMu.Unlock()
+	defer func() {
+		a.loginMu.Lock()
+		a.captchaAnswer = nil
+		a.loginMu.Unlock()
+	}()
+	a.emit("login:captcha", prompt)
+	select {
+	case text := <-answer:
+		return text, nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+func (a *App) SubmitCaptcha(id uint64, answer string) error {
+	answer = strings.TrimSpace(answer)
+	if answer == "" || len(answer) > 128 {
+		return errors.New("enter the characters shown in the image")
+	}
+	a.loginMu.Lock()
+	defer a.loginMu.Unlock()
+	if a.captchaAnswer == nil || a.captchaID != id {
+		return errors.New("this CAPTCHA is no longer active")
+	}
+	select {
+	case a.captchaAnswer <- answer:
+		a.captchaAnswer = nil
+		return nil
+	default:
+		return errors.New("this CAPTCHA has already been answered")
+	}
+}
+
 func (a *App) CancelLogin() {
+	a.loginMu.Lock()
+	if a.loginCancel != nil {
+		a.loginCancel()
+	}
+	a.loginMu.Unlock()
 	a.eng.Auth.CancelLogin()
 	a.emitState()
 }
@@ -595,6 +678,13 @@ func (a *App) SetMode(mode string) error {
 
 func (a *App) SaveSettings(s store.Settings) error {
 	cur := a.eng.Settings()
+	if strings.TrimSpace(s.RelayProxy) != cur.RelayProxy {
+		a.loginMu.Lock()
+		defer a.loginMu.Unlock()
+		if a.loginCancel != nil {
+			return errors.New("finish signing in before changing the relay")
+		}
+	}
 	s.Email, s.Mode, s.CountryCode, s.CityCode = cur.Email, cur.Mode, cur.CountryCode, cur.CityCode
 	if s.ProxyPort < 1024 || s.ProxyPort > 65535 {
 		return errors.New("port must be between 1024 and 65535")

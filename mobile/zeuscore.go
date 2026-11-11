@@ -10,10 +10,12 @@
 package zeuscore
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"reflect"
 	"strings"
 	"sync"
@@ -21,6 +23,7 @@ import (
 
 	"zeusvpn/internal/appapi"
 	"zeusvpn/internal/core"
+	"zeusvpn/internal/netx"
 	"zeusvpn/internal/store"
 	"zeusvpn/internal/vpn"
 )
@@ -78,6 +81,12 @@ type mobileTun struct {
 	open bool
 }
 
+// Android excludes the app from VpnService. On iOS this dial runs inside
+// the packet tunnel provider, whose outbound sockets carry the tunnel.
+func (*mobileTun) RelayEdgeDialer() func(context.Context, string, string) (net.Conn, error) {
+	return netx.DialContext
+}
+
 func (t *mobileTun) Prepare() error { return nil }
 
 func (t *mobileTun) Start(cfg core.TunConfig) error {
@@ -105,7 +114,7 @@ func (t *mobileTun) Start(cfg core.TunConfig) error {
 	if fd <= 0 {
 		return errors.New("could not start the VPN: no interface")
 	}
-	v, err := vpn.Start(nil, vpn.Options{FD: int(fd), MTU: mtu, Dial: cfg.Dial, Forward: cfg.Forward, BypassIran: cfg.BypassIran, Protect: cfg.Protect, ProtectPort: cfg.ProtectPort, Log: cfg.Log})
+	v, err := vpn.Start(nil, vpn.Options{FD: int(fd), MTU: mtu, Dial: cfg.Dial, Forward: cfg.Forward, BypassIran: cfg.BypassIran, Protect: cfg.Protect, ProtectPort: cfg.ProtectPort, WorkerHost: cfg.WorkerHost, Log: cfg.Log})
 	if err != nil {
 		return err
 	}
@@ -148,9 +157,10 @@ func Start(dataDir, platform string, host Host, controller TunnelController) {
 	useAndroidRoots(dataDir)
 	core.NewTunDriver = func() core.TunDriver { return &mobileTun{host: host} }
 	p := appapi.Platform{
-		Name:        platform,
-		OpenURL:     host.OpenURL,
-		OpenLogFile: nil,
+		Name:         platform,
+		ManagedRelay: store.ManagedRelayURL,
+		OpenURL:      host.OpenURL,
+		OpenLogFile:  nil,
 	}
 	if controller != nil {
 		p.External = external{controller}
@@ -298,7 +308,7 @@ func StartTunnel(dataDir string, host Host) error {
 	store.SetDir(dataDir)
 	useAndroidRoots(dataDir)
 	core.NewTunDriver = func() core.TunDriver { return &mobileTun{host: host} }
-	e := core.NewEngine()
+	e := core.NewEngineWithManagedRelay(store.ManagedRelayURL)
 	s := e.Settings()
 	if s.Mode != store.ModeTUN {
 		s.Mode = store.ModeTUN

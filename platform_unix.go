@@ -3,15 +3,22 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"syscall"
 
+	"zeusvpn/internal/netx"
 	"zeusvpn/internal/store"
 	"zeusvpn/internal/tunhelper"
 )
 
 const appTitle = "Zeus VPN"
+
+func runRelayLoginWindow(context.Context, *netx.Relay, string) error {
+	return errors.New("Firefox sign-in through the relay is available on Windows")
+}
 
 var lockFile *os.File
 

@@ -9,8 +9,8 @@ options:
   createIntermediateGroups: true
 settings:
   base:
-    MARKETING_VERSION: "1.1.8"
-    CURRENT_PROJECT_VERSION: "11008"
+    MARKETING_VERSION: "1.2.0"
+    CURRENT_PROJECT_VERSION: "12001"
     SWIFT_VERSION: "5.0"
     ENABLE_BITCODE: NO
     # Set your Apple Developer team here (or pass DEVELOPMENT_TEAM=... to

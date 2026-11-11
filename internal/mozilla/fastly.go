@@ -2,17 +2,19 @@ package mozilla
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/net/publicsuffix"
@@ -30,11 +32,13 @@ const (
 )
 
 var (
-	challengePrefixRe = regexp.MustCompile(`/_fs-ch-[A-Za-z0-9]+`)
-	initStartRe       = regexp.MustCompile(`\binit\s*\(`)
-	initCallRe        = regexp.MustCompile(`init\((\[[^\]]*\]),\s*"([^"]+)",\s*"([^"]+)"`)
-	solveMu           sync.Mutex
-	errNoChallenge    = errors.New("host did not serve a Fastly challenge page")
+	challengeSlot           = make(chan struct{}, 1)
+	challengePrefixRe       = regexp.MustCompile(`/_fs-ch-[A-Za-z0-9]+`)
+	initStartRe             = regexp.MustCompile(`\binit\s*\(`)
+	initCallRe              = regexp.MustCompile(`init\((\[[^\]]*\]),\s*"([^"]+)",\s*"([^"]+)"`)
+	errNoChallenge          = errors.New("host did not serve a Fastly challenge page")
+	ErrInteractiveChallenge = errors.New("Mozilla requires verification in the sign-in window")
+	ErrVerificationRejected = errors.New("Mozilla verification returned HTTP 400")
 )
 
 func solvePoW(base, targetHex string) (string, bool) {
@@ -136,13 +140,14 @@ func skipWSComments(s string) string {
 	}
 }
 
-func fetchText(c *http.Client, u string) (string, error) {
-	req, _ := http.NewRequest("GET", u, nil)
+func fetchText(ctx context.Context, c *http.Client, u string) (string, error) {
+	req, _ := http.NewRequestWithContext(ctx, "GET", u, nil)
 	// The challenge assets are fetched with the SAME user agent the
 	// API calls use: the anti-bot cookie Fastly issues is bound to the
 	// client fingerprint, and a cookie earned as one client is refused
 	// for another.
 	req.Header.Set("User-Agent", firefoxUserAgent())
+	req.Header.Set("Accept-Encoding", "identity")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 	resp, err := c.Do(req)
 	if err != nil {
@@ -150,26 +155,38 @@ func fetchText(c *http.Client, u string) (string, error) {
 	}
 	defer resp.Body.Close()
 	body := readBody(resp, 4<<20)
+	if resp.StatusCode == http.StatusBadRequest {
+		return "", fmt.Errorf("GET %s: %w", u, ErrVerificationRejected)
+	}
 	if resp.StatusCode != 200 {
 		return "", fmt.Errorf("GET %s returned HTTP %d", u, resp.StatusCode)
 	}
 	return string(body), nil
 }
 
-func fetchChallengePage(c *http.Client, pageURL string) (string, bool, error) {
-	body, err := fetchText(c, pageURL)
+func fetchChallengePage(ctx context.Context, c *http.Client, pageURL string) (string, bool, error) {
+	readPage := func() (string, error) {
+		attempt, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		return fetchText(attempt, c, pageURL)
+	}
+	body, err := readPage()
+	var timeout net.Error
+	if ctx.Err() == nil && errors.As(err, &timeout) && timeout.Timeout() {
+		body, err = readPage()
+	}
 	if err != nil {
 		return "", false, err
 	}
 	return body, strings.Contains(body, "/_fs-ch-") && strings.Contains(body, "Client Challenge"), nil
 }
 
-func postJSON(c *http.Client, u, origin, accept string, payload any) (*http.Response, []byte, error) {
+func postJSON(ctx context.Context, c *http.Client, u, origin, accept string, payload any) (*http.Response, []byte, error) {
 	var body []byte
 	if payload != nil {
 		body, _ = json.Marshal(payload)
 	}
-	req, _ := http.NewRequest("POST", u, bytes.NewReader(body))
+	req, _ := http.NewRequestWithContext(ctx, "POST", u, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", accept)
 	// The challenge assets are fetched with the SAME user agent the
@@ -177,6 +194,7 @@ func postJSON(c *http.Client, u, origin, accept string, payload any) (*http.Resp
 	// client fingerprint, and a cookie earned as one client is refused
 	// for another.
 	req.Header.Set("User-Agent", firefoxUserAgent())
+	req.Header.Set("Accept-Encoding", "identity")
 	req.Header.Set("Origin", origin)
 	resp, err := c.Do(req)
 	if err != nil {
@@ -186,8 +204,8 @@ func postJSON(c *http.Client, u, origin, accept string, payload any) (*http.Resp
 	return resp, readBody(resp, 1<<20), nil
 }
 
-func fetchPAT(c *http.Client, prefixURL, token string) (string, error) {
-	resp, body, err := postJSON(c, prefixURL+"/pat?token="+url.QueryEscape(token), baseOrigin(prefixURL), "text/plain", nil)
+func fetchPAT(ctx context.Context, c *http.Client, prefixURL, token string) (string, error) {
+	resp, body, err := postJSON(ctx, c, prefixURL+"/pat?token="+url.QueryEscape(token), baseOrigin(prefixURL), "text/plain", nil)
 	if err != nil {
 		return "", err
 	}
@@ -208,7 +226,16 @@ func fetchPAT(c *http.Client, prefixURL, token string) (string, error) {
 	return out.Auth, nil
 }
 
-func answerChallenge(c *http.Client, prefixURL, token string, ch map[string]any) (map[string]any, error) {
+type captchaPromptKey struct{}
+
+// WithCaptchaPrompt lets an interactive sign-in display the original image
+// and wait for the user's answer. Background requests never prompt.
+func WithCaptchaPrompt(ctx context.Context, prompt func(context.Context, string) (string, error)) context.Context {
+	ctx = context.WithValue(ctx, signInClientKey{}, &signInClientState{})
+	return context.WithValue(ctx, captchaPromptKey{}, prompt)
+}
+
+func answerChallenge(ctx context.Context, c *http.Client, prefixURL, token string, ch map[string]any) (map[string]any, error) {
 	data, _ := ch["data"].(map[string]any)
 	str := func(k string) string { s, _ := data[k].(string); return s }
 	switch ch["ty"] {
@@ -220,7 +247,7 @@ func answerChallenge(c *http.Client, prefixURL, token string, ch map[string]any)
 		}
 		return map[string]any{"ty": "pow", "base": base, "answer": answer, "hmac": str("hmac"), "expires": str("expires")}, nil
 	case "pat":
-		auth, err := fetchPAT(c, prefixURL, token)
+		auth, err := fetchPAT(ctx, c, prefixURL, token)
 		if err != nil {
 			return nil, err
 		}
@@ -234,18 +261,40 @@ func answerChallenge(c *http.Client, prefixURL, token string, ch map[string]any)
 			"detector_results":     map[string]any{},
 			"v":                    2,
 		}, nil
+	case "captcha":
+		prompt, _ := ctx.Value(captchaPromptKey{}).(func(context.Context, string) (string, error))
+		if prompt == nil {
+			return nil, ErrInteractiveChallenge
+		}
+		kind, encoded, ok := strings.Cut(str("image_b64"), ",")
+		switch kind {
+		case "data:image/png;base64", "data:image/jpeg;base64", "data:image/gif;base64", "data:image/webp;base64":
+		default:
+			return nil, errors.New("unsupported CAPTCHA image format")
+		}
+		if !ok || len(encoded) == 0 || len(encoded) > 512<<10 {
+			return nil, errors.New("invalid CAPTCHA image size")
+		}
+		if _, err := base64.StdEncoding.DecodeString(encoded); err != nil {
+			return nil, errors.New("invalid CAPTCHA image encoding")
+		}
+		answer, err := prompt(ctx, kind+","+encoded)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"ty": "captcha", "answer": strings.TrimSpace(answer)}, nil
 	}
-	return nil, fmt.Errorf("unsupported Fastly challenge %v (captcha cannot be solved automatically)", ch["ty"])
+	return nil, fmt.Errorf("unsupported Fastly challenge %v", ch["ty"])
 }
 
-func solveOnHost(main *http.Client, base string) error {
+func solveOnHost(ctx context.Context, main *http.Client, base string) error {
 	// A fresh cookie jar (a client already holding a valid cookie gets the
 	// real page instead of the challenge) sharing the main transport, so the
 	// challenge is solved through the same exit as the retried request.
 	jar, _ := cookiejar.New(&cookiejar.Options{PublicSuffixList: publicsuffix.List})
 	solver := &http.Client{Transport: main.Transport, Jar: jar, Timeout: fastlySolverTimeout}
 	pageURL := base + "/"
-	page, isChallenge, err := fetchChallengePage(solver, pageURL)
+	page, isChallenge, err := fetchChallengePage(ctx, solver, pageURL)
 	if err != nil {
 		return err
 	}
@@ -257,7 +306,18 @@ func solveOnHost(main *http.Client, base string) error {
 		return fmt.Errorf("challenge asset prefix not found on %s", base)
 	}
 	prefixURL := base + prefix
-	script, err := fetchText(solver, prefixURL+"/script.js?reload=true")
+	scriptURL := prefixURL + "/script.js?reload=true"
+	readScript := func() (string, error) {
+		attempt, cancel := context.WithTimeout(ctx, 12*time.Second)
+		defer cancel()
+		return fetchText(attempt, solver, scriptURL)
+	}
+	script, err := readScript()
+	var networkError net.Error
+	if ctx.Err() == nil && errors.As(err, &networkError) {
+		ResetConnections()
+		script, err = readScript()
+	}
 	if err != nil {
 		return err
 	}
@@ -269,16 +329,19 @@ func solveOnHost(main *http.Client, base string) error {
 	for round := 0; round < maxPostBackRounds; round++ {
 		answers := make([]map[string]any, 0, len(challenges))
 		for _, ch := range challenges {
-			a, err := answerChallenge(solver, prefixURL, token, ch)
+			a, err := answerChallenge(ctx, solver, prefixURL, token, ch)
 			if err != nil {
 				return err
 			}
 			answers = append(answers, a)
 		}
-		resp, body, err := postJSON(solver, prefixURL+"/fst-post-back", baseOrigin(prefixURL), "application/json",
+		resp, body, err := postJSON(ctx, solver, prefixURL+"/fst-post-back", baseOrigin(prefixURL), "application/json",
 			map[string]any{"token": token, "data": answers})
 		if err != nil {
 			return err
+		}
+		if resp.StatusCode == http.StatusBadRequest {
+			return ErrVerificationRejected
 		}
 		if resp.StatusCode != 200 {
 			return fmt.Errorf("challenge post-back returned HTTP %d", resp.StatusCode)
@@ -292,7 +355,7 @@ func solveOnHost(main *http.Client, base string) error {
 			return fmt.Errorf("bad post-back response: %v", err)
 		}
 		if out.Status == "success" {
-			if _, still, err := fetchChallengePage(solver, pageURL); err == nil && still {
+			if _, still, err := fetchChallengePage(ctx, solver, pageURL); err == nil && still {
 				return errors.New("challenge cookie not accepted on this exit IP")
 			}
 			cookies := jar.Cookies(mustURL(pageURL))
@@ -317,14 +380,24 @@ func solveOnHost(main *http.Client, base string) error {
 	return fmt.Errorf("Fastly challenge did not complete within %d rounds", maxPostBackRounds)
 }
 
-func solveFastlyChallenge(main *http.Client) error {
-	solveMu.Lock()
-	defer solveMu.Unlock()
+func solveFastlyChallenge(ctx context.Context, main *http.Client) error {
+	select {
+	case challengeSlot <- struct{}{}:
+		defer func() { <-challengeSlot }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 	var lastErr error = errNoChallenge
 	for _, base := range []string{fxaAPIHost, fxaSiteHost} {
-		err := solveOnHost(main, base)
+		err := solveOnHost(ctx, main, base)
 		if err == nil {
 			return nil
+		}
+		if errors.Is(err, ErrInteractiveChallenge) {
+			return err
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
 		if !errors.Is(err, errNoChallenge) {
 			lastErr = err

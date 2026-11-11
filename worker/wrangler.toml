@@ -1,0 +1,18 @@
+name = "zeusvpn-relay"
+main = "relay.mjs"
+compatibility_date = "2026-10-15"
+workers_dev = true
+preview_urls = false
+
+# Trial for Mozilla Guardian's region check. This is a placement hint,
+# not a guarantee of the country assigned to the outbound TCP address.
+[placement]
+region = "aws:us-east-1"
+
+[[ratelimits]]
+name = "RELAY_LIMITER"
+namespace_id = "1001"
+
+[ratelimits.simple]
+limit = 120
+period = 60

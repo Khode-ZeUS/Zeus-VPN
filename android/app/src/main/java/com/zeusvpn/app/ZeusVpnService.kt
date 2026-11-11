@@ -132,12 +132,8 @@ class ZeusVpnService : VpnService() {
             .setConfigureIntent(openAppIntent())
         if (Build.VERSION.SDK_INT >= 29) b.setMetered(false)
 
-        // Per-app tunnelling. VpnService.Builder can only *disallow* apps
-        // (API 21), so "tunnel only the selected apps" is built by
-        // disallowing every other visible app — the way WireGuard for
-        // Android does it (launcher-visible apps only, no
-        // QUERY_ALL_PACKAGES). Zeus itself is always direct: its own
-        // connection to the VPN server must not go through the VPN.
+        // Both lists are supported since API 21. A real allow-list keeps
+        // background and hidden apps outside the tunnel as well.
         val appsJson = cfg.optJSONArray("apps")
         val apps = HashSet<String>()
         if (appsJson != null) {
@@ -146,15 +142,13 @@ class ZeusVpnService : VpnService() {
         val mode = cfg.optString("tunnelMode", "all")
         var selected = 0
         if (mode == "include") {
-            val installed = packageManager.getInstalledPackages(0)
-            for (pi in installed) {
-                val pn = pi.packageName ?: continue
-                if (pn == packageName) {
-                    try { b.addDisallowedApplication(pn) } catch (e: PackageManager.NameNotFoundException) { }
-                } else if (apps.contains(pn)) {
+            for (pkg in apps) {
+                if (pkg == packageName) continue
+                try {
+                    b.addAllowedApplication(pkg)
                     selected++
-                } else {
-                    try { b.addDisallowedApplication(pn) } catch (e: PackageManager.NameNotFoundException) { }
+                } catch (e: PackageManager.NameNotFoundException) {
+                    // not installed any more
                 }
             }
         } else if (mode == "exclude") {

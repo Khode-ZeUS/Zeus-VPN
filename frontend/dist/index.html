@@ -26,16 +26,28 @@
     </div>
     <div class="form">
       <div class="form-error" id="login-error"></div>
-      <div id="login-direct">
+      <form id="login-direct">
         <input type="email" id="login-email" placeholder="Email" autocomplete="email" inputmode="email">
         <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
-        <input type="text" id="login-code" placeholder="Verification code" hidden>
-        <button class="btn primary" type="button" id="login-direct-go"><span>Sign in</span></button>
-      </div>
+        <input type="text" id="login-code" placeholder="Verification code" autocomplete="one-time-code" hidden>
+        <button class="btn primary" type="submit" id="login-direct-go"><span>Sign in</span></button>
+      </form>
+      <form id="login-captcha" hidden>
+        <label for="login-captcha-answer">Enter the characters shown to continue signing in.</label>
+        <img id="login-captcha-image" alt="Firefox Accounts verification challenge">
+        <input id="login-captcha-answer" type="text" maxlength="128" autocomplete="off" spellcheck="false" required>
+        <button class="btn primary" type="submit">Verify</button>
+      </form>
       <button class="btn primary" type="button" id="login-web" hidden><span>Sign in with Firefox</span></button>
       <button class="btn ghost" type="button" id="login-cancel" hidden>Cancel</button>
       <p class="muted small center" id="login-hint" hidden>The Mozilla sign-in page opens inside this window. On some networks it needs a VPN connection — connect first, then retry.</p>
     </div>
+    <details class="form" id="login-relay" hidden>
+      <summary>Connection relay</summary>
+      <label class="muted small" for="login-relay-url">Use your own Worker or a trusted SOCKS5 proxy for sign-in and VPN.</label>
+      <input type="text" id="login-relay-url" placeholder="wss://relay.example.workers.dev/" spellcheck="false">
+      <button class="btn ghost" type="button" id="login-relay-save">Save relay</button>
+    </details>
     <div class="login-foot">
       <p class="muted small">Free with any Mozilla account &middot; 50&nbsp;GB per month</p>
       <a href="#" id="link-signup">Create a free account</a>
@@ -66,7 +78,12 @@
           <svg viewBox="0 0 24 24"><path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/></svg>
         </span>
       </button>
-      <div class="status-text" id="status-text">Not connected</div>
+      <div class="status-text">
+        <svg id="full-vpn-icon" viewBox="0 0 24 24" aria-hidden="true" hidden>
+          <path d="M14 16H3V5h14v3M8 16v4m-3 0h8m5-8h4m-4-4h4v8h-4zm2 8v4"/>
+        </svg>
+        <span id="status-text">Not connected</span>
+      </div>
       <div class="status-sub" id="status-sub">Tap to connect</div>
     </section>
 
@@ -149,6 +166,7 @@
         </select>
       </div>
       <div class="input-row"><span><b>Upstream proxy</b><small>Reaches Mozilla when the direct path fails — socks5:// or http://</small></span><input type="text" id="set-upstream" placeholder="socks5://127.0.0.1:1080" spellcheck="false"></div>
+      <div class="input-row" id="set-relay-row" hidden><span><label for="set-relay"><b>Custom connection relay</b></label><small>Leave blank to use the app default.</small></span><input type="text" id="set-relay" placeholder="wss://relay.example.workers.dev/" spellcheck="false"></div>
       <div class="btn-row">
         <button class="btn ghost" id="btn-net-diag">Connection diagnostics</button>
         <button class="btn ghost" id="btn-net-reset">Reset network settings</button>
@@ -216,7 +234,7 @@
     <div class="modal-card">
       <div class="modal-icon"><svg viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V6Z"/><path d="M12 8v5M12 16h.01"/></svg></div>
       <h3>Administrator needed</h3>
-      <p class="muted" id="admin-reason">Full VPN mode creates a virtual network adapter so every app is protected. Windows requires administrator permission for that.</p>
+      <p class="muted" id="admin-reason">Full VPN mode routes app TCP traffic and DNS through a virtual adapter. General UDP traffic is unsupported. Windows requires administrator permission.</p>
       <button class="btn primary" id="btn-elevate">Restart as administrator</button>
       <button class="btn ghost" id="btn-use-proxy">Use System Proxy instead</button>
     </div>
@@ -229,15 +247,15 @@
     // app.js cannot even parse (async/await needs Chrome 55+) and the page
     // would stay blank forever — tell the user what to update instead.
     window.addEventListener("error", function (e) {
-      if (!e || !e.message || !e.message.indexOf) return; // resource errors carry no message
+      if (!window.ZeusAndroid || !e || !/\/assets\/(app|bridge)\.js$/.test(e.filename || "")) return;
+      if (!(e.error instanceof SyntaxError)) return;
       if (document.getElementById("webview-old")) return;
       var d = document.createElement("div");
       d.id = "webview-old";
-      d.style.cssText = "position:fixed;inset:0;background:#090b1a;color:#eef0ff;z-index:2147483647;padding:24px;font:14px/1.5 sans-serif;";
+      d.style.cssText = "position:fixed;top:0;right:0;bottom:0;left:0;background:#090b1a;color:#eef0ff;z-index:2147483647;padding:24px;font:14px/1.5 sans-serif;";
       d.innerHTML = "<b style='font-size:18px'>Zeus VPN</b><br><br>" +
         "The system WebView of this device is too old to run the app.<br><br>" +
-        "Please update <b>Android System WebView</b> and <b>Google Chrome</b> in the Play Store (or via system updates), then reopen the app." +
-        "<br><br><small>" + String(e.message).slice(0, 120) + "</small>";
+        "Please update <b>Android System WebView</b> and <b>Google Chrome</b> in the Play Store (or via system updates), then reopen the app.";
       var target = function () { (document.body || document.documentElement).appendChild(d); };
       if (document.body) target(); else document.addEventListener("DOMContentLoaded", target);
     }, true);

@@ -93,7 +93,7 @@ func DialResolved(ctx context.Context, network, address string) (net.Conn, error
 		netdiag.Report(host, netdiag.DNS, netdiag.OK, "", time.Since(dnsStart))
 	}
 	tcpStart := time.Now()
-	conn, err := dialResolvedConn(ctx, network, host, port, addrs)
+	conn, err := dialResolvedConn(ctx, network, port, addrs, DialContext)
 	if err != nil {
 		code, detail := netdiag.Classify(err)
 		netdiag.Report(address, netdiag.TCP, code, detail, time.Since(tcpStart))
@@ -105,7 +105,7 @@ func DialResolved(ctx context.Context, network, address string) (net.Conn, error
 
 // dialResolvedConn races the resolved addresses; split out so DialResolved
 // can wrap the result with diagnostics.
-func dialResolvedConn(ctx context.Context, network, host, port string, addrs []netip.Addr) (net.Conn, error) {
+func dialResolvedConn(ctx context.Context, network, port string, addrs []netip.Addr, dial func(context.Context, string, string) (net.Conn, error)) (net.Conn, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	type result struct {
@@ -121,7 +121,7 @@ func dialResolvedConn(ctx context.Context, network, host, port string, addrs []n
 				results <- result{nil, ctx.Err()}
 				return
 			}
-			c, err := DialContext(ctx, network, net.JoinHostPort(a.String(), port))
+			c, err := dial(ctx, network, net.JoinHostPort(a.String(), port))
 			results <- result{c, err}
 		}(i, a)
 	}

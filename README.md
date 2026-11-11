@@ -32,6 +32,7 @@
 - **Per-app tunnelling** (Android): tunnel only the apps you choose, or everything except a few — picked from a searchable list in Settings.
 - **Live stats**: download/upload speed, exit IP and your remaining monthly data (50 GB free per month).
 - **Local HTTP + SOCKS5 proxy** on `127.0.0.1:10820` for apps that need manual proxy settings (Telegram, browsers, git, ...).
+- **Connection relay** (Windows): send Mozilla sign-in and the VPN connection through a trusted first hop. The app stops those requests if the relay is unavailable. The [Cloudflare Worker pilot](worker/README.md) can be hosted without a VPS.
 - **Safe by design**: your previous proxy settings (for example v2rayN's) are restored on disconnect, even after a crash; sign-in tokens are encrypted (with Windows DPAPI, a key in the macOS Keychain, or a private key file on Linux and mobile).
 - **Kill switch** (Windows): if the VPN drops, the Windows firewall blocks all other traffic until Zeus VPN reconnects or you disconnect, so nothing leaks outside the tunnel (optional, needs administrator).
 - **Self-healing connection**: dropped connections are detected and restored automatically (moving to another server if needed), the short-lived proxy pass is renewed in the background, and a rejected pass is replaced on the spot.
@@ -67,7 +68,9 @@ The macOS and iOS versions are in beta: they are built from the same code but ha
 - **macOS and Linux**: the app stays a normal app. When you connect in Full VPN mode it asks for your administrator password and starts a small helper that runs the adapter (on Linux through polkit/`pkexec`).
 - **Android and iOS**: always Full VPN, through the system VPN permission (asked once). The local proxy `127.0.0.1:10820` also works for other apps.
 
-The VPN server's own addresses are excluded from the adapter's routes on every platform, so the engine's tunnel connection always goes out through the physical network and cannot loop back into the tunnel it is carrying.
+The addresses the engine dials to establish the tunnel are excluded from the adapter's routes, so that connection cannot loop back into the tunnel it is carrying. With a SOCKS5 relay, the exclusion applies to the relay.
+
+On Windows, enter your Worker URL under **Connection relay** on the sign-in screen or in **Settings**. You can also use a trusted SOCKS5 proxy. When a relay is configured, Firefox sign-in and VPN connections use it, with TLS to Mozilla kept in place. See the [Worker guide](worker/README.md) for setup.
 
 **Per-app tunnelling** (Android): in Settings → *Full VPN apps*, choose *Selected only* to tunnel just the apps you pick, or *Except selected* to tunnel everything but a few (banking apps, local services, …). Other platforms route all apps: iOS per-app VPN needs MDM profiles, and the desktop TUN stack has no per-app filter.
 

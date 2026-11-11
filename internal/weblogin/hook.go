@@ -19,9 +19,23 @@ import "regexp"
 // before navigating to PageURL (the hook uses it for internal handovers),
 // and re-run this script on every page load (it is idempotent).
 func HookJS(deliver, nonce string) string {
+	return hookJS(deliver, nonce, false)
+}
+
+func HookJSWithBrowserExchange(deliver, nonce string) string {
+	return hookJS(deliver, nonce, true)
+}
+
+func hookJS(deliver, nonce string, browserExchange bool) string {
 	hook := "(function(){\n"
 	hook += "if (window.__zeusHooked) return; window.__zeusHooked = true;\n"
 	hook += "var exchangeFailed = false;\n"
+	hook += "var exchangeInFlight = false;\n"
+	hook += "var reportedSession = '';\n"
+	hook += "var preferBrowserExchange = false;\n"
+	if browserExchange {
+		hook += "preferBrowserExchange = true;\n"
+	}
 	hook += "var NONCE = " + jsString(nonce) + ";\n"
 	hook += "var __deliver = " + deliver + ";\n"
 	hook += uaSpoof
@@ -67,8 +81,7 @@ const webChannelReply = `var reply = function(messageId, command, data) {
 
 const webChannelForward = `var forward = function(detail) {
   try {
-    var host = window.location.hostname;
-    if (host !== 'accounts.firefox.com' && !host.endsWith('.firefox.com')) return;
+    if (window.location.origin !== 'https://accounts.firefox.com') return;
     var msg = {}; try { msg = (typeof detail === 'string' ? JSON.parse(detail) : detail).message || {}; } catch (e) {}
     var cmd = msg.command || ''; var data = msg.data || {};
     if (cmd === 'fxaccounts:fxa_status') { reply(msg.messageId, cmd, {capabilities:{}, signedInUser:null}); return; }
@@ -80,6 +93,10 @@ const webChannelForward = `var forward = function(detail) {
       if (msg.messageId) reply(msg.messageId, cmd, {ok:true});
       if (!token) return;
       if (verified) {
+        if (preferBrowserExchange && !exchangeFailed) {
+          zeusExchange(token, email);
+          return;
+        }
         // Deliver the session right away: the engine exchanges it for
         // tokens itself (the page's own post-login navigation can land on
         // its clientId validation error — the app leaves the page before
@@ -88,6 +105,10 @@ const webChannelForward = `var forward = function(detail) {
       } else {
         try { sessionStorage.setItem('zeusToken', token);
               sessionStorage.setItem('zeusEmail', email); } catch (e) {}
+        if (preferBrowserExchange && reportedSession !== token) {
+          reportedSession = token;
+          __deliver('session?token=' + encodeURIComponent(token) + '&email=' + encodeURIComponent(email) + '&verified=0');
+        }
       }
       return;
     }
@@ -99,6 +120,10 @@ document.addEventListener('WebChannelMessageToChrome', function(e) { forward(e.d
 `
 
 const inPageExchange = `var zeusExchange = function(sessionToken, email) {
+  if (exchangeInFlight) return;
+  exchangeInFlight = true;
+  var controller = new AbortController();
+  var timeout = setTimeout(function() { controller.abort(); }, 10000);
   var enc = new TextEncoder();
   var b64 = function(buf) { var s = btoa(String.fromCharCode.apply(null, new Uint8Array(buf))); return s; };
   crypto.subtle.importKey('raw', new Uint8Array(sessionToken.match(/.{2}/g).map(function(h) { return parseInt(h, 16); })), 'HKDF', false, ['deriveBits'])
@@ -126,6 +151,7 @@ const inPageExchange = `var zeusExchange = function(sessionToken, email) {
               var header = 'Hawk id="' + tokenID + '", ts="' + ts + '", nonce="' + nonce +
                 '", mac="' + macB64 + '", hash="' + payloadHash + '"';
               return fetch('https://api.accounts.firefox.com/v1/oauth/token', {method: 'POST',
+                signal: controller.signal,
                 headers: {'Content-Type': 'application/json', 'Authorization': header}, body: body});
             });
         })
@@ -134,6 +160,7 @@ const inPageExchange = `var zeusExchange = function(sessionToken, email) {
           return res.json();
         })
         .then(function(out) {
+          if (!out.access_token) throw new Error('Missing access token');
           __deliver('tokens?access_token=' + encodeURIComponent(out.access_token || '') +
             '&refresh_token=' + encodeURIComponent(out.refresh_token || '') +
             '&expires_in=' + (out.expires_in || 86400) + '&email=' + encodeURIComponent(email));
@@ -147,7 +174,8 @@ const inPageExchange = `var zeusExchange = function(sessionToken, email) {
           '&email=' + encodeURIComponent(sessionStorage.getItem('zeusEmail') || '') + '&verified=1'); return; }
       } catch (e2) {}
       __deliver('session?token=' + encodeURIComponent(sessionToken) + '&email=' + encodeURIComponent(email) + '&verified=1');
-    });
+    })
+    .finally(function() { clearTimeout(timeout); exchangeInFlight = false; });
 };
 `
 

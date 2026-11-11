@@ -108,6 +108,39 @@ func (b *Binding) Close() {
 	b.netMon.Close()
 }
 
+// DialRelayEdge binds both the source address and the outgoing interface.
+// A Worker edge can share its IP with other sites, so no host route is
+// installed for the edge.
+func (b *Binding) DialRelayEdge(ctx context.Context, network, address string) (net.Conn, error) {
+	iface := b.ifMon.DefaultInterface()
+	if iface == nil || iface.Name == InterfaceName {
+		return nil, tun.ErrNoRoute
+	}
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, err
+	}
+	dst, err := netip.ParseAddr(host)
+	if err != nil {
+		return nil, err
+	}
+	dst = dst.Unmap()
+	for _, prefix := range iface.Addresses {
+		src := prefix.Addr().Unmap()
+		if src.Is4() != dst.Is4() || !src.IsGlobalUnicast() ||
+			(src.Is6() && src.IsPrivate() && !dst.IsPrivate()) {
+			continue
+		}
+		dialer := net.Dialer{
+			KeepAlive: 30 * time.Second,
+			LocalAddr: &net.TCPAddr{IP: src.AsSlice()},
+			Control:   control.BindToInterface(b.finder, iface.Name, iface.Index),
+		}
+		return dialer.DialContext(ctx, network, address)
+	}
+	return nil, fmt.Errorf("no source address on %s for the Worker relay", iface.Name)
+}
+
 type Options struct {
 	// Dial opens a TCP connection through the VPN; DNS over HTTPS uses it too.
 	Dial    tunnel.DialFunc
@@ -131,7 +164,9 @@ type Options struct {
 	// arriving through the adapter is refused on the spot instead of being
 	// tunneled through the server it is addressed to.
 	ProtectPort int
-	Log         func(string)
+	// WorkerHost is rejected if its TLS connection loops back into the TUN.
+	WorkerHost string
+	Log        func(string)
 }
 
 type VPN struct {
@@ -224,7 +259,7 @@ func Start(b *Binding, opts Options) (*VPN, error) {
 		// On Windows strict routing also stops DNS queries from leaking
 		// through the physical adapter.
 		tunOpts.StrictRoute = runtime.GOOS == "windows"
-		if opts.ExcludeLAN || runtime.GOOS == "windows" {
+		if opts.ExcludeLAN {
 			tunOpts.Inet4RouteExcludeAddress = privateRanges
 		} else {
 			tunOpts.Inet4RouteExcludeAddress = linkLocalRanges
@@ -408,6 +443,9 @@ func (h *handler) handleTCP(conn net.Conn, dst M.Socksaddr) error {
 	}
 	port := dst.Port
 	domain, early := sniff(conn, port)
+	if h.opts.WorkerHost != "" && strings.EqualFold(domain, h.opts.WorkerHost) {
+		return errors.New("Worker relay connection refused: routing loop protection")
+	}
 	host := dst.Addr.Unmap().String()
 	if domain != "" {
 		host = domain

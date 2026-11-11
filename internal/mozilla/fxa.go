@@ -151,6 +151,9 @@ func RefreshFirefoxVersion() {
 	req, _ := http.NewRequest("GET", "https://product-details.mozilla.org/1.0/firefox_versions.json", nil)
 	req.Header.Set("Accept", "application/json")
 	client := &http.Client{Timeout: 8 * time.Second}
+	if relay := relayTransport.Load(); relay != nil {
+		client.Transport = relay
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return
@@ -170,10 +173,14 @@ func RefreshFirefoxVersion() {
 }
 
 // fxaDo sends an FxA request as desktop Firefox would, solving Fastly's
-// challenge on HTTP 406. The Hawk header is rebuilt on every attempt so its
-// timestamp stays fresh.
+// challenge on HTTP 406. Requests tied to a native sign-in session use
+// Hawk, including when the session is still waiting for an email code.
 func fxaDo(method, path, sessionToken string, payload any) (map[string]any, error) {
-	c := Client()
+	return fxaDoContext(context.Background(), method, path, sessionToken, payload)
+}
+
+func fxaDoContext(ctx context.Context, method, path, sessionToken string, payload any) (map[string]any, error) {
+	c := firefoxAccountsClient(ctx)
 	u := mustURL(fxaAuthServer + path)
 	var body []byte
 	if payload != nil {
@@ -182,23 +189,26 @@ func fxaDo(method, path, sessionToken string, payload any) (map[string]any, erro
 	var resp *http.Response
 	var respBody []byte
 	var lastNetErr error
+	triedHTTP2 := false
 	for attempt := 0; attempt < maxChallengeAttempts; attempt++ {
-		req, _ := http.NewRequest(method, u.String(), bytes.NewReader(body))
+		req, _ := http.NewRequestWithContext(ctx, method, u.String(), bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("User-Agent", firefoxUserAgent())
 		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Accept-Encoding", "identity")
 		if sessionToken != "" {
-			h, err := hawkHeader(method, u, sessionToken, body)
+			header, err := hawkHeader(method, u, sessionToken, body)
 			if err != nil {
 				return nil, err
 			}
-			req.Header.Set("Authorization", h)
+			req.Header.Set("Authorization", header)
 		}
 		var err error
 		httpStart := time.Now()
 		resp, err = c.Do(req)
 		if err != nil {
-			if req.Context().Err() != nil {
+			_, interactiveRoute := c.Transport.(*firefoxSignInRoute)
+			if req.Context().Err() != nil || (interactiveRoute && method == http.MethodPost) {
 				return nil, fmt.Errorf("could not reach Firefox Accounts: %w", err)
 			}
 			// A transient network cut (handshake timeout, reset): drop the
@@ -226,10 +236,24 @@ func fxaDo(method, path, sessionToken string, payload any) (map[string]any, erro
 		if resp.StatusCode != 406 {
 			break
 		}
+		if path == "/oauth/token" && !triedHTTP2 {
+			triedHTTP2 = true
+			if h2 := firefoxAccountsHTTP2(c); h2 != nil {
+				again, _ := replayable(req)
+				if alternate, err := h2.Do(again); err == nil {
+					data := readBody(alternate, 1<<20)
+					alternate.Body.Close()
+					if alternate.StatusCode < 500 && alternate.StatusCode != http.StatusNotAcceptable {
+						resp, respBody = alternate, data
+						break
+					}
+				}
+			}
+		}
 		// Solve on every 406, bare or not: the API host usually serves no
 		// challenge page at all — the needed cookie (Domain=firefox.com) is
 		// earned from the site host, and the solver handles both.
-		if err := solveFastlyChallenge(c); err != nil {
+		if err := solveFastlyChallenge(ctx, c); err != nil {
 			if errors.Is(err, errNoChallenge) && !strings.Contains(string(respBody), "_fs-ch-") {
 				// Neither host served a challenge and the block came bare:
 				// the network path itself is refused; solving cannot help.
@@ -273,46 +297,92 @@ func asString(m map[string]any, k string) string { s, _ := m[k].(string); return
 // Login signs in with the onepw protocol. unblockCode is only needed after
 // FxA rejected a previous attempt with ErrnoRequestBlocked.
 func Login(email, password, unblockCode string) (*LoginResponse, error) {
-	body := map[string]any{"email": email, "authPW": deriveAuthPW(email, password), "verificationMethod": "email-2fa"}
+	return LoginContext(context.Background(), email, password, unblockCode)
+}
+
+func LoginContext(ctx context.Context, email, password, unblockCode string) (*LoginResponse, error) {
+	body := map[string]any{
+		"email": email, "authPW": deriveAuthPW(email, password),
+		"verificationMethod": "email-otp", "sendSigninVerificationEmail": true,
+	}
 	if unblockCode != "" {
 		body["unblockCode"] = unblockCode
 	}
-	data, err := fxaDo("POST", "/account/login", "", body)
+	data, err := fxaDoContext(ctx, "POST", "/account/login", "", body)
 	if fe, ok := err.(*FxaError); ok && fe.Errno == ErrnoInvalidParameter {
 		delete(body, "verificationMethod")
-		data, err = fxaDo("POST", "/account/login", "", body)
+		delete(body, "sendSigninVerificationEmail")
+		data, err = fxaDoContext(ctx, "POST", "/account/login", "", body)
 	}
 	if err != nil {
 		return nil, err
 	}
 	verified, _ := data["verified"].(bool)
+	session := asString(data, "sessionToken")
+	if decoded, err := hex.DecodeString(session); err != nil || len(decoded) != 32 {
+		return nil, errors.New("Firefox Accounts did not return a valid sign-in session")
+	}
 	return &LoginResponse{
 		UID:                asString(data, "uid"),
-		SessionToken:       asString(data, "sessionToken"),
+		SessionToken:       session,
 		Verified:           verified,
 		VerificationMethod: asString(data, "verificationMethod"),
 	}, nil
 }
 
-func SendUnblockCode(email string) error {
-	_, err := fxaDo("POST", "/account/login/send_unblock_code", "", map[string]any{"email": email})
+func SendUnblockCode(ctx context.Context, email string) error {
+	_, err := fxaDoContext(ctx, "POST", "/account/login/send_unblock_code", "", map[string]any{"email": email})
 	return err
 }
 
 func VerifySession(sessionToken, code string) error {
-	_, err := fxaDo("POST", "/session/verify_code", sessionToken, map[string]any{"code": code})
+	return VerifySessionContext(context.Background(), sessionToken, code)
+}
+
+func VerifySessionContext(ctx context.Context, sessionToken, code string) error {
+	_, err := fxaDoContext(ctx, "POST", "/session/verify_code", sessionToken, map[string]any{"code": code})
 	return err
 }
 
+func VerifyAuthenticator(ctx context.Context, sessionToken, code string) error {
+	data, err := fxaDoContext(ctx, "POST", "/session/verify/totp", sessionToken, map[string]any{"code": code})
+	if err != nil {
+		return err
+	}
+	if data["success"] != true {
+		return errors.New("invalid or expired authenticator code")
+	}
+	return nil
+}
+
+func SessionVerified(ctx context.Context, sessionToken string) (bool, error) {
+	data, err := fxaDoContext(ctx, "GET", "/recovery_email/status", sessionToken, nil)
+	if err != nil {
+		return false, err
+	}
+	verified, ok := data["verified"].(bool)
+	if !ok {
+		return false, errors.New("Firefox Accounts did not return a session verification status")
+	}
+	return verified, nil
+}
+
 func OAuthToken(sessionToken string) (*TokenResponse, error) {
-	data, err := fxaDo("POST", "/oauth/token", sessionToken, map[string]any{
+	return OAuthTokenContext(context.Background(), sessionToken)
+}
+
+func OAuthTokenContext(ctx context.Context, sessionToken string) (*TokenResponse, error) {
+	data, err := fxaDoContext(ctx, "POST", "/oauth/token", sessionToken, map[string]any{
 		"client_id": firefoxClientID, "grant_type": "fxa-credentials", "scope": oauthScope, "access_type": "offline",
 	})
 	if err != nil {
+		if errors.Is(err, ErrInteractiveChallenge) || ctx.Err() != nil {
+			return nil, err
+		}
 		// The edge refuses the direct session-to-token exchange on some
 		// networks: FxA's session-authenticated authorization-code grant
 		// (PKCE) goes through where the fxa-credentials grant does not.
-		if t, cerr := OAuthTokenViaCode(sessionToken); cerr == nil {
+		if t, cerr := oauthTokenViaCode(ctx, sessionToken); cerr == nil {
 			return t, nil
 		}
 		return nil, err
@@ -324,7 +394,7 @@ func OAuthToken(sessionToken string) (*TokenResponse, error) {
 // the session token itself (Hawk-signed) — FxA's session-authenticated
 // code grant — and returns the code with its PKCE verifier. It goes
 // through the same 406/challenge handling as every FxA request.
-func oauthAuthorizationViaSession(sessionToken string) (string, string, error) {
+func oauthAuthorizationViaSession(ctx context.Context, sessionToken string) (string, string, error) {
 	verifierBytes := make([]byte, 32)
 	if _, err := rand.Read(verifierBytes); err != nil {
 		return "", "", fmt.Errorf("generating the code verifier: %w", err)
@@ -339,16 +409,16 @@ func oauthAuthorizationViaSession(sessionToken string) (string, string, error) {
 	body, _ := json.Marshal(map[string]any{
 		"client_id": firefoxClientID, "response_type": "code", "scope": oauthScope,
 		"state": state, "access_type": "offline",
-		"code_challenge":         base64.RawURLEncoding.EncodeToString(sum[:]),
+		"code_challenge":        base64.RawURLEncoding.EncodeToString(sum[:]),
 		"code_challenge_method": "S256",
 	})
 	u := mustURL(fxaAuthServer + "/oauth/authorization")
-	c := Client()
+	c := firefoxAccountsClient(ctx)
 	var resp *http.Response
 	var respBody []byte
 	var lastNetErr error
 	for attempt := 0; attempt < maxChallengeAttempts; attempt++ {
-		req, _ := http.NewRequest("POST", u.String(), bytes.NewReader(body))
+		req, _ := http.NewRequestWithContext(ctx, "POST", u.String(), bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("User-Agent", firefoxUserAgent())
 		req.Header.Set("Accept", "application/json")
@@ -360,7 +430,8 @@ func oauthAuthorizationViaSession(sessionToken string) (string, string, error) {
 		var err error
 		resp, err = c.Do(req)
 		if err != nil {
-			if req.Context().Err() != nil {
+			_, interactiveRoute := c.Transport.(*firefoxSignInRoute)
+			if req.Context().Err() != nil || interactiveRoute {
 				return "", "", fmt.Errorf("could not reach Firefox Accounts: %w", err)
 			}
 			// Transient network cut: fresh connections and try again.
@@ -375,7 +446,7 @@ func oauthAuthorizationViaSession(sessionToken string) (string, string, error) {
 		if resp.StatusCode != 406 {
 			break
 		}
-		if err := solveFastlyChallenge(c); err != nil {
+		if err := solveFastlyChallenge(ctx, c); err != nil {
 			if errors.Is(err, errNoChallenge) && !strings.Contains(string(respBody), "_fs-ch-") {
 				break
 			}
@@ -404,12 +475,12 @@ func oauthAuthorizationViaSession(sessionToken string) (string, string, error) {
 // OAuthTokenViaCode exchanges the session for tokens through the
 // authorization-code grant with PKCE — the path that goes through where
 // the direct fxa-credentials exchange is refused at the edge.
-func OAuthTokenViaCode(sessionToken string) (*TokenResponse, error) {
-	code, verifier, err := oauthAuthorizationViaSession(sessionToken)
+func oauthTokenViaCode(ctx context.Context, sessionToken string) (*TokenResponse, error) {
+	code, verifier, err := oauthAuthorizationViaSession(ctx, sessionToken)
 	if err != nil {
 		return nil, err
 	}
-	data, err := fxaDo("POST", "/oauth/token", "", map[string]any{
+	data, err := fxaDoContext(ctx, "POST", "/oauth/token", "", map[string]any{
 		"client_id": firefoxClientID, "grant_type": "authorization_code",
 		"code": code, "code_verifier": verifier,
 	})
@@ -443,6 +514,9 @@ func CompleteWebLogin(sessionToken string) (*TokenResponse, error) {
 		t, err := OAuthToken(sessionToken)
 		if err == nil {
 			return t, nil
+		}
+		if errors.Is(err, ErrInteractiveChallenge) {
+			return nil, err
 		}
 		var fe *FxaError
 		if errors.As(err, &fe) && fe.Status >= 400 && fe.Status < 500 {

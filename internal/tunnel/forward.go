@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/http2"
@@ -28,6 +29,9 @@ func (u *Upstream) RoundTrip(req *http.Request) (*http.Response, error) {
 		token := *u.token.Load()
 		r := req.Clone(req.Context())
 		r.Header.Set("Proxy-Authorization", "Bearer "+token)
+		if r.Body != nil && r.Body != http.NoBody {
+			r.Body = &countingBody{ReadCloser: r.Body, bytes: &u.Up}
+		}
 		resp, err := cc.RoundTrip(r)
 		// Only 407 is unambiguously the proxy (403 may come from the site).
 		if err == nil && resp.StatusCode == http.StatusProxyAuthRequired && replayable && !renewed &&
@@ -44,7 +48,7 @@ func (u *Upstream) RoundTrip(req *http.Request) (*http.Response, error) {
 			}
 			return nil, err
 		}
-		resp.Body = &countingBody{ReadCloser: resp.Body, u: u}
+		resp.Body = &countingBody{ReadCloser: resp.Body, bytes: &u.Down}
 		return resp, nil
 	}
 	return nil, lastErr
@@ -52,12 +56,12 @@ func (u *Upstream) RoundTrip(req *http.Request) (*http.Response, error) {
 
 type countingBody struct {
 	io.ReadCloser
-	u *Upstream
+	bytes *atomic.Int64
 }
 
 func (b *countingBody) Read(p []byte) (int, error) {
 	n, err := b.ReadCloser.Read(p)
-	b.u.Down.Add(int64(n))
+	b.bytes.Add(int64(n))
 	return n, err
 }
 

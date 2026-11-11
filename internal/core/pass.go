@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"zeusvpn/internal/mozilla"
+	"zeusvpn/internal/tunnel"
 )
 
 // Below this much remaining data an account counts as used up, so the
@@ -95,6 +96,8 @@ func (e *Engine) acquirePass(autoSwitch bool) (*mozilla.ProxyPass, string, error
 
 func friendlyPassError(err error) error {
 	switch {
+	case errors.Is(err, mozilla.ErrInteractiveChallenge):
+		return mozilla.ErrInteractiveChallenge
 	case errors.Is(err, mozilla.ErrQuotaExceeded):
 		return errors.New("your monthly Mozilla VPN data is used up; add another account in Settings")
 	case errors.Is(err, mozilla.ErrTokenInvalid):
@@ -103,28 +106,72 @@ func friendlyPassError(err error) error {
 	return err
 }
 
+type quotaEstimate struct {
+	account, reset   string
+	limit, left      int64
+	bytesAt, carried int64
+}
+
+func tunnelBytes(up *tunnel.Upstream) int64 {
+	if up == nil {
+		return 0
+	}
+	return up.Up.Load() + up.Down.Load()
+}
+
+func (q quotaEstimate) remaining(bytes int64) int64 {
+	return max(0, q.left-q.carried-max(0, bytes-q.bytesAt))
+}
+
+func (q *quotaEstimate) update(pass *mozilla.ProxyPass, email string, bytesAt, carried int64) {
+	if q.account != email {
+		*q = quotaEstimate{account: email}
+	}
+	if pass.QuotaLimit <= 0 {
+		return
+	}
+	// Guardian can send the same quota for several requests while the
+	// tunnel has already moved more data. Keep that consumption counted.
+	if q.limit == pass.QuotaLimit && q.left == pass.QuotaLeft && q.reset == pass.QuotaReset {
+		return
+	}
+	if q.limit == pass.QuotaLimit && q.reset == pass.QuotaReset && pass.QuotaLeft <= q.left {
+		carried = max(carried, pass.QuotaLeft-q.remaining(bytesAt))
+	}
+	*q = quotaEstimate{account: email, reset: pass.QuotaReset, limit: pass.QuotaLimit, left: pass.QuotaLeft, bytesAt: bytesAt, carried: carried}
+}
+
+func (e *Engine) updateQuotaLocked(pass *mozilla.ProxyPass, email string, bytesAt int64) {
+	cached, used := e.Auth.cachedQuota(email)
+	if pass.QuotaLimit <= 0 && e.quota.account != email {
+		pass = &cached
+	}
+	if cached.QuotaLimit != pass.QuotaLimit || cached.QuotaLeft != pass.QuotaLeft || cached.QuotaReset != pass.QuotaReset {
+		used = 0
+	}
+	e.quota.update(pass, email, bytesAt, used)
+}
+
 // applyPass makes a new pass the one used for every new connection.
 func (e *Engine) applyPass(pass *mozilla.ProxyPass, email string) {
 	e.mu.Lock()
 	up := e.up
 	e.passExpires = pass.Expires
-	if pass.QuotaLimit > 0 {
-		e.passLimit, e.passLeft = pass.QuotaLimit, pass.QuotaLeft
+	bytesAt := tunnelBytes(up)
+	if e.quota.account != email {
+		e.Auth.saveLocalQuota(e.quota, bytesAt)
 	}
-	if up == nil {
-		// The connection has not started yet: its counters begin at zero.
-		e.passUpAt, e.passDownAt = 0, 0
-	} else {
-		e.passUpAt, e.passDownAt = up.Up.Load(), up.Down.Load()
-	}
-	e.mu.Unlock()
+	e.updateQuotaLocked(pass, email, bytesAt)
+	e.state.QuotaLimit, e.state.QuotaLeft = e.quota.limit, e.quota.remaining(tunnelBytes(up))
+	e.state.Account = email
 	if up != nil {
 		up.SetToken(pass.Token)
 	}
-	e.update(func(s *State) {
-		s.QuotaLimit, s.QuotaLeft = pass.QuotaLimit, pass.QuotaLeft
-		s.Account = email
-	})
+	state := e.state
+	e.mu.Unlock()
+	if e.OnState != nil {
+		e.OnState(state)
+	}
 	select {
 	case e.renewKick <- struct{}{}:
 	default:
@@ -149,31 +196,7 @@ func (e *Engine) quotaPollLoop(ctx context.Context) {
 			return
 		case <-t.C:
 		}
-		email := e.Auth.ActiveEmail()
-		if email == "" {
-			continue
-		}
-		pass, err := e.passFor(email)
-		if err != nil {
-			if errors.Is(err, mozilla.ErrQuotaExceeded) {
-				e.Auth.MarkExhausted(email)
-				e.Log("warning", fmt.Sprintf("%s is out of data according to Mozilla", email))
-			} else if !errors.Is(err, ErrSessionExpired) {
-				e.Log("info", "could not refresh account data: "+err.Error())
-			}
-			continue
-		}
-		// Only apply when the server shows a different remaining amount
-		// than our live estimate, and the account still is the active one
-		// (a switch may have happened while the fetch was in flight).
-		if pass.QuotaLimit <= 0 || email != e.Auth.ActiveEmail() {
-			continue
-		}
-		limit, left := e.LiveQuota()
-		if limit != pass.QuotaLimit || left != pass.QuotaLeft {
-			e.applyPass(pass, email)
-			e.Log("info", fmt.Sprintf("data refreshed for %s (%s left)", email, quotaText(pass.QuotaLeft)))
-		}
+		e.refreshActiveQuota(ctx)
 	}
 }
 
@@ -234,34 +257,43 @@ func (e *Engine) renewLoop(ctx context.Context) {
 	}
 }
 
-// RefreshActiveQuota re-reads the server's authoritative remaining data for
+// refreshActiveQuota re-reads the server's authoritative remaining data for
 // the account in use. Mozilla counts every client of the account, so this
 // keeps the displayed number honest while other devices or browser
 // extensions consume the same data. Called periodically while connected.
-func (e *Engine) RefreshActiveQuota() {
+func (e *Engine) refreshActiveQuota(ctx context.Context) {
 	e.mu.Lock()
 	st := e.state.Status
 	email := e.state.Account
+	up, expires := e.up, e.passExpires
+	bytesAt := tunnelBytes(up)
 	e.mu.Unlock()
 	if (st != StatusConnected && st != StatusReconnecting) || email == "" {
 		return
 	}
 	pass, err := e.passFor(email)
+	if ctx.Err() != nil {
+		return
+	}
+	if errors.Is(err, mozilla.ErrQuotaExceeded) {
+		e.Auth.MarkExhausted(email)
+	}
 	if err != nil || pass.QuotaLimit <= 0 {
 		return
 	}
 	e.mu.Lock()
-	up := e.up
-	e.passLimit, e.passLeft = pass.QuotaLimit, pass.QuotaLeft
-	if up == nil {
-		e.passUpAt, e.passDownAt = 0, 0
-	} else {
-		e.passUpAt, e.passDownAt = up.Up.Load(), up.Down.Load()
+	if e.up != up || e.state.Account != email || e.passExpires != expires {
+		e.mu.Unlock()
+		return
 	}
+	e.updateQuotaLocked(pass, email, bytesAt)
+	e.state.QuotaLimit, e.state.QuotaLeft = e.quota.limit, e.quota.remaining(tunnelBytes(up))
+	e.Auth.saveLocalQuota(e.quota, tunnelBytes(up))
+	state := e.state
 	e.mu.Unlock()
-	e.update(func(s *State) {
-		s.QuotaLimit, s.QuotaLeft = pass.QuotaLimit, pass.QuotaLeft
-	})
+	if e.OnState != nil {
+		e.OnState(state)
+	}
 }
 
 // UseAccount makes email the active account; a live connection moves to it
@@ -286,6 +318,10 @@ func (e *Engine) UseAccount(email string) error {
 // RefreshQuotas updates the remaining data of every account.
 func (e *Engine) RefreshQuotas() {
 	for _, acc := range e.Auth.Accounts() {
+		status := e.State().Status
+		if status == StatusConnecting || status == StatusReconnecting {
+			return
+		}
 		if acc.NeedsLogin {
 			continue
 		}
@@ -294,6 +330,9 @@ func (e *Engine) RefreshQuotas() {
 				e.Auth.MarkExhausted(acc.Email)
 			} else if !errors.Is(err, ErrSessionExpired) {
 				e.Log("warning", "could not check data for "+acc.Email+": "+err.Error())
+				if !switchable(err) {
+					return
+				}
 			}
 		}
 	}

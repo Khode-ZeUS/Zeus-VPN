@@ -1,6 +1,7 @@
 package mozilla
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -27,8 +28,8 @@ type Entitlement struct {
 
 func guardianDo(method, path, accessToken string) (*http.Response, []byte, error) {
 	c := Client()
-	do := func() (*http.Response, []byte, error) {
-		req, _ := http.NewRequest(method, GuardianEndpoint+path, nil)
+	do := func(requestPath string) (*http.Response, []byte, error) {
+		req, _ := http.NewRequest(method, GuardianEndpoint+requestPath, nil)
 		applyHeaders(req.Header)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+accessToken)
@@ -39,10 +40,19 @@ func guardianDo(method, path, accessToken string) (*http.Response, []byte, error
 		defer resp.Body.Close()
 		return resp, readBody(resp, 1<<20), nil
 	}
-	resp, body, err := do()
+	resp, body, err := do(path)
+	// Retry the known Guardian route once through the same network path.
+	// The origin may normalize the extra slash even when the edge does not.
+	if err == nil && resp.StatusCode == http.StatusUnavailableForLegalReasons &&
+		strings.HasPrefix(path, "/api/v1/fpn/") && strings.Contains(string(body), "unavailable_in_region") {
+		if retried, data, retryErr := do("/" + path); retryErr == nil &&
+			(retried.StatusCode == http.StatusOK || retried.StatusCode == http.StatusTooManyRequests) {
+			resp, body = retried, data
+		}
+	}
 	if err == nil && resp.StatusCode == 406 {
-		if serr := solveFastlyChallenge(c); serr == nil {
-			resp, body, err = do()
+		if serr := solveFastlyChallenge(context.Background(), c); serr == nil {
+			resp, body, err = do(path)
 		}
 	}
 	return resp, body, err
@@ -73,8 +83,11 @@ func FetchProxyPass(accessToken string) (*ProxyPass, error) {
 	}
 	offset := detectClockOffset(nbf, exp, time.Now())
 	pass := &ProxyPass{Token: out.Token, Expires: exp.Add(offset), QuotaReset: resp.Header.Get("X-Quota-Reset")}
-	pass.QuotaLimit, _ = strconv.ParseInt(resp.Header.Get("X-Quota-Limit"), 10, 64)
-	pass.QuotaLeft, _ = strconv.ParseInt(resp.Header.Get("X-Quota-Remaining"), 10, 64)
+	limit, limitErr := strconv.ParseInt(resp.Header.Get("X-Quota-Limit"), 10, 64)
+	left, leftErr := strconv.ParseInt(resp.Header.Get("X-Quota-Remaining"), 10, 64)
+	if limitErr == nil && leftErr == nil && limit > 0 && left >= 0 && left <= limit {
+		pass.QuotaLimit, pass.QuotaLeft = limit, left
+	}
 	return pass, nil
 }
 

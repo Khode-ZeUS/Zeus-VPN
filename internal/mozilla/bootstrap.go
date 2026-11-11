@@ -56,6 +56,8 @@ type BootstrapOptions struct {
 	// ProxyURL is the user's own upstream proxy ("socks5://…" /
 	// "http(s)://…"), or "" when none is configured.
 	ProxyURL string
+	// RelayOnly removes all network paths except the strict Mozilla client.
+	RelayOnly bool
 	// Sig returns the current network's signature ("": unknown).
 	Sig func() string
 	// Masque fetches the list through Firefox's recommended masque server.
@@ -100,19 +102,26 @@ func NewBootstrap(opts BootstrapOptions) *Bootstrap {
 	if b.opts.Sig == nil {
 		b.opts.Sig = netx.NetworkSignature
 	}
-	if b.opts.ProxyURL != "" {
+	if !opts.RelayOnly && b.opts.ProxyURL != "" {
 		if dial, derr := netx.UpstreamDialer(b.opts.ProxyURL); derr == nil && dial != nil {
 			b.paths = append(b.paths, namedPath{"proxy", func() ([]Country, error) {
+				// A refresh started before the user enabled the relay can
+				// still have an older bootstrap path waiting to run.
+				if relayTransport.Load() != nil {
+					return FetchServerList()
+				}
 				tr := &http.Transport{Proxy: nil, DialContext: dial, ForceAttemptHTTP2: true, TLSHandshakeTimeout: 15 * time.Second}
 				defer tr.CloseIdleConnections()
 				return FetchServerListWith(&http.Client{Transport: tr, Timeout: 30 * time.Second})
 			}})
 		}
 	}
-	b.paths = append(b.paths,
-		namedPath{"direct", FetchServerList},
-	)
-	if opts.Masque != nil {
+	if opts.RelayOnly {
+		b.paths = append(b.paths, namedPath{"relay", FetchServerList})
+	} else {
+		b.paths = append(b.paths, namedPath{"direct", FetchServerList})
+	}
+	if !opts.RelayOnly && opts.Masque != nil {
 		b.paths = append(b.paths, namedPath{"masque", opts.Masque})
 	}
 	if opts.Cache != nil {

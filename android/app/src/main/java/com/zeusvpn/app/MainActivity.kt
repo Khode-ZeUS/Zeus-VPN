@@ -40,7 +40,7 @@ class MainActivity : Activity() {
     private lateinit var web: WebView
     private val executor = Executors.newCachedThreadPool()
 
-    @Volatile
+    // Accessed only on the main thread, including the permission result.
     private var vpnPermission: CompletableFuture<Boolean>? = null
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -209,16 +209,42 @@ class MainActivity : Activity() {
 
     /** Asks for the VPN permission if needed; blocks a worker thread. */
     private fun ensureVpnPermission(): Boolean {
-        val intent = VpnService.prepare(this) ?: return true
         val result = CompletableFuture<Boolean>()
-        vpnPermission = result
-        runOnUiThread { startActivityForResult(intent, REQ_VPN) }
+        runOnUiThread {
+            if (isFinishing || isDestroyed) {
+                result.complete(false)
+                return@runOnUiThread
+            }
+            vpnPermission?.let { pending ->
+                pending.whenComplete { granted, error ->
+                    if (error != null) result.completeExceptionally(error)
+                    else result.complete(granted)
+                }
+                return@runOnUiThread
+            }
+            try {
+                val intent = VpnService.prepare(this)
+                if (intent == null) {
+                    result.complete(true)
+                } else {
+                    vpnPermission = result
+                    startActivityForResult(intent, REQ_VPN)
+                }
+            } catch (e: Exception) {
+                vpnPermission = null
+                result.completeExceptionally(e)
+            }
+        }
         return result.get()
     }
 
     @Deprecated("Activity result API")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        if (requestCode == REQ_VPN) vpnPermission?.complete(resultCode == RESULT_OK)
+        if (requestCode == REQ_VPN) {
+            val pending = vpnPermission
+            vpnPermission = null
+            pending?.complete(resultCode == RESULT_OK)
+        }
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
     }

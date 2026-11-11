@@ -3,9 +3,11 @@ module zeusvpn
 go 1.26.0
 
 require (
+	github.com/gorilla/websocket v1.5.3
 	github.com/refraction-networking/utls v1.6.7
 	github.com/sagernet/sing v0.9.6
 	github.com/sagernet/sing-tun v0.9.6
+	github.com/wailsapp/go-webview2 v1.0.22
 	github.com/wailsapp/wails/v2 v2.16.0
 	golang.org/x/mobile v0.0.0-20261011034528-197770444867
 	golang.org/x/net v0.61.0
@@ -24,7 +26,6 @@ require (
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/jchv/go-winloader v0.0.0-20210711035445-715c2860da7e // indirect
 	github.com/klauspost/compress v1.17.4 // indirect
 	github.com/labstack/echo/v4 v4.13.3 // indirect
@@ -49,7 +50,6 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
-	github.com/wailsapp/go-webview2 v1.0.22 // indirect
 	github.com/wailsapp/mimetype v1.4.1 // indirect
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
 	golang.org/x/crypto v0.58.0 // indirect

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"regexp"
 	"sort"
@@ -19,7 +20,7 @@ var (
 
 // LoginStep tells the UI what the sign-in flow needs next.
 type LoginStep struct {
-	Step    string `json:"step"` // "done", "code", "link", "unblock"
+	Step    string `json:"step"` // "done", "code", "link", "unblock", "verified"
 	Message string `json:"message"`
 }
 
@@ -42,6 +43,8 @@ type Auth struct {
 	pendingEmail    string
 	pendingPassword string
 	pendingSession  string
+	pendingVerified bool
+	pendingTOTP     bool
 }
 
 func NewAuth() *Auth { return &Auth{accs: store.LoadAccounts()} }
@@ -82,7 +85,7 @@ func (a *Auth) Accounts() []AccountInfo {
 			Email:      acc.Email,
 			Active:     acc.Email == a.accs.Active,
 			QuotaLimit: acc.QuotaLimit,
-			QuotaLeft:  acc.QuotaLeft,
+			QuotaLeft:  max(0, acc.QuotaLeft-acc.QuotaLocalUsed),
 			Exhausted:  acc.Exhausted && !acc.Usable(),
 			NeedsLogin: acc.NeedsLogin,
 		}
@@ -251,12 +254,44 @@ func (a *Auth) RecordQuota(email string, p *mozilla.ProxyPass) {
 	if acc == nil || p.QuotaLimit <= 0 {
 		return
 	}
+	if acc.QuotaLimit == p.QuotaLimit && acc.QuotaStamp == p.QuotaReset && p.QuotaLeft <= acc.QuotaLeft {
+		acc.QuotaLocalUsed = max(0, acc.QuotaLocalUsed-(acc.QuotaLeft-p.QuotaLeft))
+	} else {
+		acc.QuotaLocalUsed = 0
+	}
 	acc.QuotaLimit, acc.QuotaLeft, acc.QuotaAt = p.QuotaLimit, p.QuotaLeft, time.Now()
+	acc.QuotaStamp = p.QuotaReset
 	if t, err := time.Parse(time.RFC3339, p.QuotaReset); err == nil {
 		acc.QuotaReset = t
 	}
 	acc.Exhausted = p.QuotaLeft <= 0
 	a.saveLocked()
+}
+
+func (a *Auth) cachedQuota(email string) (mozilla.ProxyPass, int64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	acc := a.accs.Find(email)
+	if acc == nil || (!acc.QuotaReset.IsZero() && !time.Now().Before(acc.QuotaReset)) {
+		return mozilla.ProxyPass{}, 0
+	}
+	return mozilla.ProxyPass{QuotaLimit: acc.QuotaLimit, QuotaLeft: acc.QuotaLeft, QuotaReset: acc.QuotaStamp}, acc.QuotaLocalUsed
+}
+
+func (a *Auth) saveLocalQuota(q quotaEstimate, bytes int64) {
+	if q.limit <= 0 {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	acc := a.accs.Find(q.account)
+	if acc == nil || acc.QuotaLimit != q.limit || acc.QuotaLeft != q.left || acc.QuotaStamp != q.reset {
+		return
+	}
+	if used := q.left - q.remaining(bytes); used > acc.QuotaLocalUsed {
+		acc.QuotaLocalUsed = used
+		a.saveLocked()
+	}
 }
 
 // MarkExhausted records that Mozilla refused the account for lack of data.
@@ -266,6 +301,7 @@ func (a *Auth) MarkExhausted(email string) {
 	if acc := a.accs.Find(email); acc != nil {
 		acc.Exhausted = true
 		acc.QuotaLeft = 0
+		acc.QuotaLocalUsed = 0
 		if acc.QuotaReset.IsZero() || time.Now().After(acc.QuotaReset) {
 			now := time.Now().UTC()
 			acc.QuotaReset = time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, time.UTC)
@@ -316,13 +352,19 @@ func (a *Auth) pickLocked(tried map[string]bool, fallbackAny bool) string {
 
 // --- sign-in flow (adds or refreshes an account) ---
 
-func (a *Auth) finish(session string) (*LoginStep, error) {
-	t, err := mozilla.OAuthToken(session)
+func (a *Auth) finish(ctx context.Context, session string) (*LoginStep, error) {
+	t, err := mozilla.OAuthTokenContext(ctx, session)
 	if err != nil {
 		return nil, err
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if session != a.pendingSession {
+		return nil, errors.New("sign-in expired, please start again")
+	}
 	email := a.pendingEmail
 	acc := a.accs.Find(email)
 	if acc == nil {
@@ -344,27 +386,34 @@ func (a *Auth) finish(session string) (*LoginStep, error) {
 		a.accs.Active = email
 	}
 	a.saveLocked()
-	a.pendingPassword, a.pendingSession = "", ""
+	a.pendingEmail, a.pendingPassword, a.pendingSession = "", "", ""
+	a.pendingVerified = false
+	a.pendingTOTP = false
 	return &LoginStep{Step: "done"}, nil
 }
 
-func (a *Auth) Login(email, password string) (*LoginStep, error) {
+func (a *Auth) Login(ctx context.Context, email, password string) (*LoginStep, error) {
 	email = cleanEmail(email)
 	if email == "" || password == "" {
 		return nil, errors.New("enter your email and password")
 	}
-	return a.login(email, password, "")
+	return a.login(ctx, email, password, "")
 }
 
-func (a *Auth) login(email, password, unblock string) (*LoginStep, error) {
-	resp, err := mozilla.Login(email, password, unblock)
+func (a *Auth) login(ctx context.Context, email, password, unblock string) (*LoginStep, error) {
+	resp, err := mozilla.LoginContext(ctx, email, password, unblock)
 	if err != nil {
 		var fe *mozilla.FxaError
 		if errors.As(err, &fe) && fe.Errno == mozilla.ErrnoRequestBlocked {
 			a.mu.Lock()
+			if ctx.Err() != nil {
+				a.mu.Unlock()
+				return nil, ctx.Err()
+			}
 			a.pendingEmail, a.pendingPassword = email, password
+			a.pendingSession, a.pendingVerified = "", false
 			a.mu.Unlock()
-			if serr := mozilla.SendUnblockCode(email); serr != nil {
+			if serr := mozilla.SendUnblockCode(ctx, email); serr != nil {
 				return nil, serr
 			}
 			return &LoginStep{Step: "unblock", Message: "Mozilla blocked this sign-in for safety. Enter the unblock code sent to " + email + "."}, nil
@@ -372,15 +421,25 @@ func (a *Auth) login(email, password, unblock string) (*LoginStep, error) {
 		return nil, err
 	}
 	a.mu.Lock()
+	if ctx.Err() != nil {
+		a.mu.Unlock()
+		return nil, ctx.Err()
+	}
 	a.pendingEmail, a.pendingSession = email, resp.SessionToken
+	a.pendingPassword = ""
+	a.pendingVerified = resp.Verified
+	a.pendingTOTP = resp.VerificationMethod == "totp-2fa"
 	a.mu.Unlock()
 	if !resp.Verified {
+		if resp.VerificationMethod == "totp-2fa" {
+			return &LoginStep{Step: "totp", Message: "Enter the code from your authenticator app."}, nil
+		}
 		if resp.VerificationMethod == "email" {
 			return &LoginStep{Step: "link", Message: "Open the confirmation link sent to " + email + ", then continue."}, nil
 		}
 		return &LoginStep{Step: "code", Message: "Enter the 6-digit code sent to " + email + "."}, nil
 	}
-	return a.finish(resp.SessionToken)
+	return a.ContinueVerifiedLogin(ctx)
 }
 
 func (a *Auth) PendingEmail() string {
@@ -389,45 +448,79 @@ func (a *Auth) PendingEmail() string {
 	return a.pendingEmail
 }
 
-func (a *Auth) VerifyCode(code string) (*LoginStep, error) {
+func (a *Auth) VerifyCode(ctx context.Context, code string) (*LoginStep, error) {
 	a.mu.Lock()
 	session := a.pendingSession
+	totp := a.pendingTOTP
 	a.mu.Unlock()
 	if session == "" {
 		return nil, errors.New("sign-in expired, please start again")
 	}
-	if err := mozilla.VerifySession(session, cleanEmail(code)); err != nil {
+	verify := mozilla.VerifySessionContext
+	if totp {
+		verify = mozilla.VerifyAuthenticator
+	}
+	if err := verify(ctx, session, cleanEmail(code)); err != nil {
 		return nil, err
 	}
-	return a.finish(session)
+	a.mu.Lock()
+	if a.pendingSession != session {
+		a.mu.Unlock()
+		return nil, errors.New("sign-in expired, please start again")
+	}
+	a.pendingVerified = true
+	a.mu.Unlock()
+	return a.ContinueVerifiedLogin(ctx)
 }
 
-func (a *Auth) ConfirmLink() (*LoginStep, error) {
+// ContinueVerifiedLogin retries the token exchange without resubmitting the
+// one-time code after Firefox Accounts has already accepted it.
+func (a *Auth) ContinueVerifiedLogin(ctx context.Context) (*LoginStep, error) {
+	a.mu.Lock()
+	session := a.pendingSession
+	verified := a.pendingVerified
+	a.mu.Unlock()
+	if session == "" || !verified {
+		return nil, errors.New("verify the sign-in session before continuing")
+	}
+	step, err := a.finish(ctx, session)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return &LoginStep{Step: "verified", Message: err.Error()}, nil
+	}
+	return step, nil
+}
+
+func (a *Auth) ConfirmLink(ctx context.Context) (*LoginStep, error) {
 	a.mu.Lock()
 	session := a.pendingSession
 	a.mu.Unlock()
 	if session == "" {
 		return nil, errors.New("sign-in expired, please start again")
 	}
-	step, err := a.finish(session)
+	step, err := a.finish(ctx, session)
 	if err != nil {
 		return nil, errors.New("not confirmed yet: open the link in the email first")
 	}
 	return step, nil
 }
 
-func (a *Auth) SubmitUnblock(code string) (*LoginStep, error) {
+func (a *Auth) SubmitUnblock(ctx context.Context, code string) (*LoginStep, error) {
 	a.mu.Lock()
 	email, pw := a.pendingEmail, a.pendingPassword
 	a.mu.Unlock()
 	if pw == "" {
 		return nil, errors.New("sign-in expired, please start again")
 	}
-	return a.login(email, pw, strings.TrimSpace(code))
+	return a.login(ctx, email, pw, strings.TrimSpace(code))
 }
 
 func (a *Auth) CancelLogin() {
 	a.mu.Lock()
 	a.pendingEmail, a.pendingPassword, a.pendingSession = "", "", ""
+	a.pendingVerified = false
+	a.pendingTOTP = false
 	a.mu.Unlock()
 }

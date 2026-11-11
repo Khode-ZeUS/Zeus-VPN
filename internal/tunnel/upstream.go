@@ -42,6 +42,7 @@ type Upstream struct {
 	port  int
 	addrs []netip.Addr
 	token atomic.Pointer[string]
+	relay *netx.Relay
 
 	transport *http2.Transport
 	mu        sync.Mutex
@@ -60,14 +61,15 @@ type Upstream struct {
 // in TUN mode the system resolver may itself depend on the tunnel, so
 // reconnects dial the cached IPs.
 func NewUpstream(ctx context.Context, host string, port int, token string, refresh RefreshFunc) (*Upstream, error) {
-	ips, err := netx.LookupHost(ctx, host)
-	if err != nil {
-		return nil, fmt.Errorf("could not resolve %s: %w", host, err)
-	}
+	return NewRelayedUpstream(ctx, host, port, token, refresh, nil)
+}
+
+// NewRelayedUpstream uses the given first hop for every session and retarget.
+func NewRelayedUpstream(ctx context.Context, host string, port int, token string, refresh RefreshFunc, relay *netx.Relay) (*Upstream, error) {
 	u := &Upstream{
 		host:    host,
 		port:    port,
-		addrs:   ips,
+		relay:   relay,
 		refresh: refresh,
 		transport: &http2.Transport{
 			ReadIdleTimeout:    25 * time.Second,
@@ -76,8 +78,24 @@ func NewUpstream(ctx context.Context, host string, port int, token string, refre
 			DisableCompression: true,
 		},
 	}
+	ips, err := u.resolve(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	u.addrs = ips
 	u.token.Store(&token)
 	return u, nil
+}
+
+func (u *Upstream) resolve(ctx context.Context, host string) ([]netip.Addr, error) {
+	if u.relay != nil {
+		return nil, nil // SOCKS5 resolves the hostname
+	}
+	ips, err := netx.LookupHost(ctx, host)
+	if err != nil {
+		return nil, fmt.Errorf("could not resolve %s: %w", host, err)
+	}
+	return ips, nil
 }
 
 // sessionFatal are CONNECT statuses meaning the pass itself was refused, so
@@ -122,9 +140,9 @@ func (u *Upstream) Host() string {
 // Retarget moves the tunnel to another server: open sessions are closed and
 // new connections go to host:port.
 func (u *Upstream) Retarget(ctx context.Context, host string, port int) error {
-	ips, err := netx.LookupHost(ctx, host)
+	ips, err := u.resolve(ctx, host)
 	if err != nil {
-		return fmt.Errorf("could not resolve %s: %w", host, err)
+		return err
 	}
 	u.mu.Lock()
 	u.host, u.port, u.addrs = host, port, ips
@@ -139,14 +157,14 @@ func (u *Upstream) Retarget(ctx context.Context, host string, port int) error {
 
 func (u *Upstream) SetToken(token string) { u.token.Store(&token) }
 
-// Addrs returns the VPN server's current addresses. In TUN mode they are
-// kept off the virtual adapter's routes: the app's own connection to the
-// server must leave through the physical network, never through the tunnel
-// it is carrying (that would loop).
-func (u *Upstream) Addrs() []netip.Addr {
+// SocketRoute identifies the first hop to exclude from the virtual adapter.
+func (u *Upstream) SocketRoute() ([]netip.Addr, int) {
+	if u.relay != nil {
+		return u.relay.Route()
+	}
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	return append([]netip.Addr(nil), u.addrs...)
+	return append([]netip.Addr(nil), u.addrs...), u.port
 }
 
 // Warmup establishes the first session so connection problems surface
@@ -187,11 +205,11 @@ type tlsConn struct {
 // SNI — they reassemble fragmented ClientHellos and recognize Go's TLS
 // fingerprint itself, then answer with a forged certificate. A real
 // browser's ClientHello passes where Go's own does not.
-func (u *Upstream) handshake(ctx context.Context, ep endpoint, ip netip.Addr) (*tlsConn, error) {
+func (u *Upstream) handshake(ctx context.Context, ep endpoint, dial func(context.Context, string, string) (net.Conn, error), addr string) (*tlsConn, error) {
 	dctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	start := time.Now()
-	raw, err := netx.DialContext(dctx, "tcp", net.JoinHostPort(ip.String(), strconv.Itoa(ep.port)))
+	raw, err := dial(dctx, "tcp", addr)
 	if err != nil {
 		return nil, err
 	}
@@ -217,14 +235,25 @@ func (u *Upstream) handshake(ctx context.Context, ep endpoint, ip netip.Addr) (*
 }
 
 func (u *Upstream) newConn(ctx context.Context, ep endpoint) (*http2.ClientConn, error) {
+	dial := netx.DialContext
+	var hosts []string
+	if u.relay != nil {
+		dial = u.relay.DialContext
+		hosts = []string{ep.host}
+	} else {
+		for _, ip := range ep.addrs {
+			hosts = append(hosts, ip.String())
+		}
+	}
 	// The first error is reported: the addresses are sorted IPv4-first, and
 	// a trailing IPv6 attempt ("an invalid argument was supplied" on hosts
 	// without usable IPv6) must not mask the real cause.
 	var lastErr error
-	for _, ip := range ep.addrs {
+	for _, host := range hosts {
+		addr := net.JoinHostPort(host, strconv.Itoa(ep.port))
 		wasBlocked := netx.HostBlocked(ep.host)
-		tc, err := u.handshake(ctx, ep, ip)
-		if err != nil && netx.IsUnknownAuthority(err) {
+		tc, err := u.handshake(ctx, ep, dial, addr)
+		if u.relay == nil && err != nil && netx.IsUnknownAuthority(err) {
 			// The network answered with a certificate signed by an unknown
 			// authority — an SNI middlebox, not the real server. Hide the
 			// server name on the next attempt, exactly like a cut-off
@@ -233,10 +262,10 @@ func (u *Upstream) newConn(ctx context.Context, ep endpoint) (*http2.ClientConn,
 			// they are not marked.
 			netx.MarkBlocked(ep.host)
 		}
-		if err != nil && !wasBlocked && netx.HostBlocked(ep.host) && ctx.Err() == nil {
+		if u.relay == nil && err != nil && !wasBlocked && netx.HostBlocked(ep.host) && ctx.Err() == nil {
 			// The network cut off a plain handshake (or forged its
 			// certificate); retry with the server name fragmented.
-			tc, err = u.handshake(ctx, ep, ip)
+			tc, err = u.handshake(ctx, ep, dial, addr)
 		}
 		if err != nil {
 			if lastErr == nil {

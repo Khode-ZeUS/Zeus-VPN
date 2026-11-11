@@ -46,6 +46,7 @@ type Config struct {
 	// helper's routes so the app's own tunnel connection cannot loop.
 	Protect     []netip.Addr
 	ProtectPort int
+	WorkerHost  string
 	// OnExit is called if the helper stops without being asked to.
 	OnExit func()
 }
@@ -80,6 +81,9 @@ func Launch(cfg Config, logf func(string)) (*Helper, error) {
 	}
 	if cfg.ProtectPort > 0 {
 		args = append(args, "--protect-port", strconv.Itoa(cfg.ProtectPort))
+	}
+	if cfg.WorkerHost != "" {
+		args = append(args, "--worker-host", cfg.WorkerHost)
 	}
 	if cfg.BypassLAN {
 		args = append(args, "--bypass-lan")
@@ -200,6 +204,7 @@ func Run(args []string) int {
 	var protect []netip.Addr
 	fs.Var(&addrList{&protect}, "protect", "VPN server address to keep off the routes")
 	protectPort := fs.Int("protect-port", 0, "")
+	workerHost := fs.String("worker-host", "", "")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -240,6 +245,7 @@ func Run(args []string) int {
 		ExcludeLAN:  *bypassLAN,
 		Protect:     protect,
 		ProtectPort: *protectPort,
+		WorkerHost:  *workerHost,
 		Log:         func(s string) { send("log " + s) },
 	})
 	if err != nil {

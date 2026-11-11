@@ -45,7 +45,7 @@ function fmtDuration(ms) {
   return `${h}:${m}:${sec}`;
 }
 function esc(s) {
-  // ES2016 syntax only (no ?? / ?.): old un-updated Android WebViews must
+  // Avoid newer syntax (no ?? / ?.): old Android WebViews must
   // be able to parse the whole file.
   return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
@@ -109,6 +109,7 @@ function openSheet(id) {
   $("#scrim").hidden = false;
   for (const s of $$(".sheet")) s.hidden = s.id !== id;
 }
+
 function closeSheets() {
   const appsOpen = !$("#sheet-apps").hidden;
   $("#scrim").hidden = true;
@@ -137,6 +138,14 @@ function fmtDate(ms) {
   return ms ? new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
 }
 
+function quotaLabel(left, limit) {
+  return `${fmtBytes(left)} left · ${fmtBytes(Math.max(0, limit - left))} used`;
+}
+
+function quotaPercent(left, limit) {
+  return Math.max(0, Math.min(100, (limit - left) / limit * 100)).toFixed(1) + "%";
+}
+
 function renderAccounts() {
   const list = $("#account-list");
   const html = (snap.accounts || []).map((a) => {
@@ -150,7 +159,7 @@ function renderAccounts() {
       cls = "warn";
       pct = 100;
     } else if (a.quotaLimit > 0) {
-      line = `${fmtBytes(a.quotaLeft)} left of ${fmtBytes(a.quotaLimit)}` + (a.quotaReset ? ` · resets ${fmtDate(a.quotaReset)}` : "");
+      line = quotaLabel(a.quotaLeft, a.quotaLimit) + (a.quotaReset ? ` · resets ${fmtDate(a.quotaReset)}` : "");
       pct = Math.min(100, ((a.quotaLimit - a.quotaLeft) / a.quotaLimit) * 100);
     } else {
       line = "Checking data…";
@@ -160,13 +169,41 @@ function renderAccounts() {
       : `<button class="acct-use" data-use="${esc(a.email)}">Use</button>`;
     return `<div class="acct ${a.active ? "active" : ""}">
       <span class="avatar">${esc(initial)}</span>
-      <span class="acct-body"><b>${esc(a.email || "Mozilla account")}</b><small class="${cls}">${esc(line)}</small>
+      <span class="acct-body"><b>${esc(a.email || "Mozilla account")}</b><small class="acct-quota ${cls}">${esc(line)}</small>
         ${a.quotaLimit > 0 ? `<span class="mini-bar"><i style="width:${pct.toFixed(1)}%"></i></span>` : ""}</span>
       ${action}
       <button class="icon-btn" data-remove="${esc(a.email)}" title="Sign out of this account"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </div>`;
   });
   list.innerHTML = html.join("");
+}
+
+function renderQuota() {
+  const accounts = snap.accounts || [];
+  const active = accounts.find(a => a.active) || {};
+  const connected = snap.status === "connected" || snap.status === "reconnecting";
+  const current = connected && lastStats.account && lastStats.account === snap.account && lastStats.quotaLimit > 0
+    ? lastStats : snap;
+  const limit = current.quotaLimit || active.quotaLimit || 0;
+  const left = current.quotaLimit ? current.quotaLeft : active.quotaLeft || 0;
+  $("#quota-text").textContent = limit > 0 ? quotaLabel(left, limit) : "—";
+  $("#quota-fill").style.width = limit > 0 ? quotaPercent(left, limit) : "0";
+
+  if (connected && snap.account === active.email && limit > 0 && !active.needsLogin && !active.exhausted) {
+    const label = $("#account-list .acct.active .acct-quota");
+    const bar = $("#account-list .acct.active .mini-bar i");
+    if (label) label.textContent = quotaLabel(left, limit) + (active.quotaReset ? ` · resets ${fmtDate(active.quotaReset)}` : "");
+    if (bar) bar.style.width = quotaPercent(left, limit);
+  }
+  const known = accounts.filter(a => a.quotaLimit > 0);
+  $("#total-row").hidden = accounts.length < 2 || !known.length;
+  if (known.length) {
+    const totalLeft = known.reduce((sum, a) => sum + (a.email === snap.account && connected && limit > 0
+      ? left : a.exhausted ? 0 : a.quotaLeft), 0);
+    const totalLimit = known.reduce((sum, a) => sum + (a.email === snap.account && connected && limit > 0
+      ? limit : a.quotaLimit), 0);
+    $("#total-text").textContent = `${fmtBytes(totalLeft)} left of ${fmtBytes(totalLimit)}`;
+  }
 }
 
 const AUTOSTART_LABEL = { windows: "Start with Windows", macos: "Open at login", linux: "Start at login" };
@@ -191,16 +228,24 @@ function render() {
   if (!snap) return;
   applyPlatform();
   renderAccounts();
-  if (webLoginPending && snap.loggedIn) {
+  const relay = snap.settings.relay_proxy || "";
+  const windowsRelay = snap.platform === "windows";
+  $("#login-relay").hidden = $("#set-relay-row").hidden = !windowsRelay;
+  for (const id of ["#login-relay-url", "#set-relay"]) {
+    if (document.activeElement !== $(id)) $(id).value = relay;
+  }
+  $("#set-relay").disabled = $("#login-relay-save").disabled = snap.status !== "disconnected";
+  $("#link-signup").hidden = windowsRelay;
+  if (!windowsRelay && webLoginPending && snap.loggedIn) {
     // The web sign-in finished successfully — return to the app instead of
     // staying on the login view.
     webLoginPending = false;
     addingAccount = false;
   }
   if (!snap.loggedIn || addingAccount) {
-    $("#login-cancel").hidden = !snap.loggedIn;
+    $("#login-cancel").hidden = !snap.loggedIn && !loginStep && !activeCaptcha;
     $("#login-subtitle").textContent = snap.loggedIn ? "Add another Mozilla account" : "Sign in with your Mozilla account";
-    $("#login-error").textContent = snap.error || "";
+    if (!loginBusy) $("#login-error").textContent = webLoginPending ? "Opening the Firefox sign-in page…" : (snap.error || "");
     showView("view-login");
     return;
   }
@@ -226,11 +271,12 @@ function render() {
   const texts = {
     disconnected: ["Not connected", "Tap to connect"],
     connecting: ["Connecting…", "Securing your connection"],
-    connected: ["Connected", ""],
+    connected: [mode === "tun" ? "Full VPN connected" : "Connected", ""],
     disconnecting: ["Disconnecting…", ""],
     reconnecting: ["Reconnecting…", snap.settings.kill_switch ? "Kill switch is blocking the internet" : "Connection lost, retrying"],
   };
   $("#status-text").textContent = texts[st][0];
+  $("#full-vpn-icon").hidden = st !== "connected" || mode !== "tun";
   clearInterval(timerHandle);
   if (st === "connected") {
     const tick = () => ($("#status-sub").textContent = fmtDuration(Date.now() - snap.connectedAt));
@@ -261,24 +307,7 @@ function render() {
   lp.hidden = ping == null;
 
   $("#exit-ip").textContent = st === "connected" ? (snap.exitIp ? `${snap.exitIp}` : "checking…") : "—";
-  // Quota of the active account (live while connected, last known otherwise).
-  const active = accounts.find((a) => a.active) || {};
-  const limit = snap.quotaLimit || active.quotaLimit || 0;
-  const left = snap.quotaLimit ? snap.quotaLeft : active.quotaLeft || 0;
-  if (limit > 0) {
-    $("#quota-text").textContent = `${fmtBytes(left)} left of ${fmtBytes(limit)}`;
-    $("#quota-fill").style.width = Math.min(100, ((limit - left) / limit) * 100).toFixed(1) + "%";
-  } else {
-    $("#quota-text").textContent = "—";
-    $("#quota-fill").style.width = "0";
-  }
-  const known = accounts.filter((a) => a.quotaLimit > 0);
-  $("#total-row").hidden = accounts.length < 2 || !known.length;
-  if (known.length) {
-    const totalLeft = known.reduce((s, a) => s + (a.exhausted ? 0 : a.quotaLeft), 0);
-    const totalLimit = known.reduce((s, a) => s + a.quotaLimit, 0);
-    $("#total-text").textContent = `${fmtBytes(totalLeft)} left of ${fmtBytes(totalLimit)}`;
-  }
+  renderQuota();
 
   const banner = $("#banner");
   if (st === "reconnecting" && snap.settings.kill_switch) {
@@ -290,6 +319,17 @@ function render() {
     banner.className = "banner";
     banner.textContent = snap.error;
     banner.hidden = false;
+    if (snap.needsBrowserVerification && st === "disconnected") {
+      const verify = document.createElement("button");
+      verify.type = "button";
+      verify.textContent = "Sign in again";
+      verify.onclick = () => {
+        addingAccount = true;
+        render();
+        $("#login-email").focus();
+      };
+      banner.append(verify);
+    }
   } else if (mode === "tun" && !snap.elevated && st === "disconnected") {
     banner.className = "banner info";
     banner.innerHTML = 'Full VPN needs administrator rights.<button id="banner-elevate">Restart as admin</button>';
@@ -325,10 +365,7 @@ function renderStats() {
   // Live remaining data: the server's number minus what this connection
   // moved since the last refresh, so sharing the account elsewhere is the
   // only thing that changes it in between.
-  if (lastStats.quotaLimit > 0) {
-    $("#quota-text").textContent = `${fmtBytes(lastStats.quotaLeft)} left of ${fmtBytes(lastStats.quotaLimit)}`;
-    $("#quota-fill").style.width = Math.min(100, ((lastStats.quotaLimit - lastStats.quotaLeft) / lastStats.quotaLimit) * 100).toFixed(1) + "%";
-  }
+  if (snap && snap.loggedIn) renderQuota();
 }
 
 function renderServers() {
@@ -375,7 +412,7 @@ function renderServers() {
 
 // ---------- per-app tunnelling (Android) ----------
 async function saveAppSettings() {
-  const s = { ...snap.settings, app_tunnel_mode: appMode, apps: selectedApps };
+  const s = Object.assign({}, snap.settings, { app_tunnel_mode: appMode, apps: selectedApps });
   try {
     await api().SaveSettings(s);
     await refreshSnapshot();
@@ -553,7 +590,7 @@ function showAdminModal(reason) {
   adminReason = reason;
   $("#admin-reason").textContent = reason === "killswitch"
     ? "The kill switch uses the Windows firewall to block traffic when the VPN drops. Windows requires administrator permission for that."
-    : "Full VPN mode creates a virtual network adapter so every app is protected. Windows requires administrator permission for that.";
+    : "Full VPN mode routes app TCP traffic and DNS through a virtual adapter. General UDP traffic is unsupported. Windows requires administrator permission.";
   $("#btn-use-proxy").textContent = reason === "killswitch" ? "Turn off kill switch and connect" : "Use System Proxy instead";
   $("#modal-admin").hidden = false;
 }
@@ -568,31 +605,59 @@ async function elevate() {
 
 // ---------- web sign-in (the API password route is edge-blocked) ----------
 async function startWebLogin() {
+  if (webLoginPending) return;
   webLoginPending = true;
+  $("#login-web").disabled = true;
   try { localStorage.setItem("zeusAppURL", location.origin + location.pathname); } catch (e) {}
   $("#login-error").textContent = "Opening the Firefox sign-in page…";
   try {
     await api().StartWebLogin(localStorage.getItem("zeusAppURL") || (location.origin + location.pathname));
   } catch (e) {
+    webLoginPending = false;
+    $("#login-web").disabled = false;
     $("#login-error").textContent = errText(e);
   }
 }
 
-// ---------- direct sign-in (mobile): the engine signs in and answers
+// ---------- direct sign-in: the engine signs in and answers
 // Mozilla's edge challenge itself; the flow may need an unblock code, an
 // emailed code or an email confirmation link ----------
 let loginStep = null;
+let loginBusy = false;
+let activeCaptcha = null;
+let loginCancelled = false;
+
+function showCaptcha(challenge) {
+  activeCaptcha = challenge;
+  $("#login-direct").hidden = !!challenge;
+  $("#login-captcha").hidden = !challenge;
+  $("#login-captcha-answer").value = "";
+  const image = $("#login-captcha-image");
+  if (challenge) {
+    image.src = challenge.image;
+    $("#login-cancel").hidden = false;
+    $("#login-captcha-answer").focus();
+    $("#login-error").textContent = "";
+  } else {
+    image.removeAttribute("src");
+  }
+}
 
 function loginStepUI(res) {
   loginStep = (res && res.step) || "done";
   $("#login-error").textContent = (res && res.message) || "";
-  const needCode = loginStep === "unblock" || loginStep === "code" || loginStep === "link";
+  const needCode = loginStep === "unblock" || loginStep === "code" || loginStep === "totp";
+  $("#login-email").hidden = $("#login-password").hidden = loginStep !== "done";
   $("#login-code").hidden = !needCode;
   $("#login-code").placeholder = loginStep === "unblock" ? "Unblock code from the email"
-    : loginStep === "link" ? "Press continue after opening the link"
+    : loginStep === "totp" ? "Code from your authenticator app"
     : "6-digit code from the email";
+  $("#login-code").inputMode = loginStep === "code" || loginStep === "totp" ? "numeric" : "text";
   $("#login-direct-go").querySelector("span").textContent =
-    needCode ? "Continue" : "Sign in";
+    loginStep === "done" ? "Sign in" : loginStep === "verified" ? "Retry sign-in" : "Continue";
+  $("#login-cancel").hidden = !snap.loggedIn && loginStep === "done";
+  if (loginStep !== "done") $("#login-password").value = "";
+  if (needCode) $("#login-code").focus();
   if (loginStep === "done") {
     $("#login-email").value = "";
     $("#login-password").value = "";
@@ -612,16 +677,11 @@ async function directLogin() {
   }
   $("#login-error").textContent = "Signing in…";
   try {
-    loginStepUI(await api().Login(email, password));
+    const step = await api().Login(email, password);
+    if (!loginCancelled) loginStepUI(step);
   } catch (e) {
-    const msg = errText(e);
-    $("#login-error").textContent = msg;
-    // Mozilla's edge refuses the direct route on some networks (and is
-    // intermittent about it): keep the web page as the visible fallback.
-    if (msg.indexOf("edge") !== -1 || msg.indexOf("anti-bot") !== -1) {
-      $("#login-web").hidden = false;
-      $("#login-web").querySelector("span").textContent = "Sign in with the Firefox page instead";
-    }
+    if (loginCancelled) return;
+    showLoginError(e);
   }
 }
 
@@ -631,10 +691,20 @@ async function continueLogin() {
   try {
     const res = loginStep === "unblock" ? await api().SubmitUnblock(code)
       : loginStep === "link" ? await api().ConfirmLink()
+      : loginStep === "verified" ? await api().ContinueVerifiedLogin()
       : await api().VerifyCode(code);
-    loginStepUI(res);
+    if (!loginCancelled) loginStepUI(res);
   } catch (e) {
-    $("#login-error").textContent = errText(e);
+    if (!loginCancelled) showLoginError(e);
+  }
+}
+
+function showLoginError(error) {
+  const message = errText(error);
+  $("#login-error").textContent = message;
+  if (snap.platform === "windows" && /edge|anti-bot/.test(message)) {
+    $("#login-web").hidden = false;
+    $("#login-web").querySelector("span").textContent = "Sign in with the Firefox page";
   }
 }
 
@@ -646,13 +716,63 @@ function wire() {
   $("#orb").onclick = toggleConnection;
   $("#link-signup").onclick = (e) => { e.preventDefault(); api().OpenURL("https://accounts.firefox.com/signup"); };
   $("#login-web").onclick = startWebLogin;
-  $("#login-direct-go").onclick = () => (loginStep ? continueLogin() : directLogin());
-  $("#login-code").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") $("#login-direct-go").onclick();
-  });
+  const saveRelay = async (field, feedback) => {
+    const value = $(field).value.trim();
+    if (value === (snap.settings.relay_proxy || "")) return;
+    try {
+      await api().SaveSettings(Object.assign({}, snap.settings, { relay_proxy: value }));
+      await refreshSnapshot();
+      feedback("Relay saved.");
+    } catch (e) {
+      feedback(errText(e));
+    }
+  };
+  $("#login-relay-save").onclick = () => saveRelay("#login-relay-url", msg => { $("#login-error").textContent = msg; });
+  $("#set-relay").onchange = () => saveRelay("#set-relay", toast);
+  $("#login-direct").onsubmit = async (event) => {
+    event.preventDefault();
+    if (loginBusy) return;
+    loginBusy = true;
+    loginCancelled = false;
+    $("#login-direct-go").disabled = true;
+    try {
+      if (loginStep) await continueLogin();
+      else await directLogin();
+    } finally {
+      loginBusy = false;
+      showCaptcha(null);
+      $("#login-direct-go").disabled = false;
+      $("#login-cancel").hidden = !snap.loggedIn && !loginStep;
+    }
+  };
+  $("#login-captcha").onsubmit = async (event) => {
+    event.preventDefault();
+    const challenge = activeCaptcha;
+    if (!challenge) return;
+    const answer = $("#login-captcha-answer").value;
+    const button = event.currentTarget.querySelector("button");
+    button.disabled = true;
+    try {
+      await api().SubmitCaptcha(challenge.id, answer);
+      if (activeCaptcha === challenge) {
+        showCaptcha(null);
+        if (loginBusy) $("#login-error").textContent = "Checking verification…";
+      }
+    } catch (e) {
+      if (activeCaptcha === challenge) $("#login-error").textContent = errText(e);
+    } finally {
+      button.disabled = false;
+    }
+  };
   $("#login-cancel").onclick = () => {
+    loginCancelled = true;
+    showCaptcha(null);
     addingAccount = false;
     loginStep = null;
+    $("#login-email").hidden = $("#login-password").hidden = false;
+    $("#login-code").hidden = true;
+    $("#login-password").value = $("#login-code").value = "";
+    $("#login-direct-go").querySelector("span").textContent = "Sign in";
     $("#login-error").textContent = "";
     try { api().CancelLogin(); } catch (e) {}
     render();
@@ -715,7 +835,7 @@ function wire() {
   for (const b of $$("[data-close]")) b.onclick = closeSheets;
 
   const saveSettings = async () => {
-    const s = { ...snap.settings };
+    const s = Object.assign({}, snap.settings);
     s.bypass_iran = $("#set-bypass-ir").checked;
     s.bypass_lan = $("#set-bypass-lan").checked;
     s.auto_connect = $("#set-autoconnect").checked;
@@ -866,7 +986,7 @@ function wire() {
   $("#btn-use-proxy").onclick = async () => {
     $("#modal-admin").hidden = true;
     if (adminReason === "killswitch") {
-      await api().SaveSettings({ ...snap.settings, kill_switch: false });
+      await api().SaveSettings(Object.assign({}, snap.settings, { kill_switch: false }));
       await refreshSnapshot();
       toggleConnection();
     } else {
@@ -912,6 +1032,15 @@ function appendLog(line) {
 async function init() {
   wire();
   window.runtime.EventsOn("state", (s) => { snap = s; render(); });
+  window.runtime.EventsOn("login:captcha", (challenge) => {
+    if (loginBusy && !loginCancelled) showCaptcha(challenge);
+  });
+  window.runtime.EventsOn("relay-sign-in-finished", (success) => {
+    webLoginPending = false;
+    $("#login-web").disabled = false;
+    if (success) addingAccount = false;
+    refreshSnapshot();
+  });
   window.runtime.EventsOn("stats", (s) => { lastStats = s; renderStats(); });
   window.runtime.EventsOn("notice", (msg) => toast(msg, 6000));
   window.runtime.EventsOn("log", (line) => {

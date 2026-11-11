@@ -5,6 +5,11 @@ set -eu
 VERSION="$1"
 ARCH="$2"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# The CI workflow builds multiple revisions. Package the version declared
+# by the checked-out desktop app so apt can identify this build correctly.
+if [ "${GITHUB_ACTIONS:-false}" = true ]; then
+  VERSION="$(node -p 'require(process.argv[1]).info.productVersion' "$ROOT/wails.json")"
+fi
 OUT="$ROOT/build/bin"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT

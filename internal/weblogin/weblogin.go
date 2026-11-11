@@ -33,6 +33,7 @@ const PageURL = "https://accounts.firefox.com/?context=fx_desktop_v3&service=syn
 type Result struct {
 	Tokens       *store.Tokens
 	SessionToken string
+	Unverified   bool
 	Email        string
 	Err          error
 }
@@ -66,7 +67,7 @@ func Start() (*Login, error) {
 	mux.HandleFunc("/tokens", l.guard(l.token))
 	mux.HandleFunc("/session", l.guard(l.session))
 	mux.HandleFunc("/cancel", l.guard(l.cancel))
-	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5}
+	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go srv.Serve(ln)
 	return l, nil
 }
@@ -157,8 +158,14 @@ func (l *Login) session(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(400)
 		return
 	}
-	l.deliver(Result{SessionToken: token, Email: q.Get("email")})
-	w.WriteHeader(200)
+	unverified := q.Get("verified") == "0"
+	l.deliver(Result{SessionToken: token, Email: q.Get("email"), Unverified: unverified})
+	if unverified {
+		// A 204 leaves the verification form open in the browser.
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 // cancel handles the user pressing the injected cancel button.
@@ -173,6 +180,10 @@ func (l *Login) Result() <-chan Result { return l.result }
 // HookJS returns the shared in-page sign-in hook with the given delivery
 // expression (see hook.go).
 func (l *Login) HookJS(deliver string) string { return HookJS(deliver, l.nonce) }
+
+func (l *Login) HookJSWithBrowserExchange(deliver string) string {
+	return HookJSWithBrowserExchange(deliver, l.nonce)
+}
 
 // ReceiverURL is the base URL of the loopback receiver (for platform// ReceiverURL is the base URL of the loopback receiver (for platform
 // delivery adapters that navigate to it).

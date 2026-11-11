@@ -3,7 +3,9 @@
 package core
 
 import (
+	"context"
 	"errors"
+	"net"
 	"os"
 
 	"zeusvpn/internal/mozilla"
@@ -47,7 +49,7 @@ func (t *helperTun) Start(cfg TunConfig) error {
 	onExit := func() { cfg.OnFail(errors.New("the Full VPN helper stopped unexpectedly")) }
 	h, err := tunhelper.Launch(tunhelper.Config{
 		ProxyAddr: cfg.ProxyAddr, BypassLAN: cfg.BypassLAN,
-		Protect: cfg.Protect, ProtectPort: cfg.ProtectPort, OnExit: onExit,
+		Protect: cfg.Protect, ProtectPort: cfg.ProtectPort, WorkerHost: cfg.WorkerHost, OnExit: onExit,
 	}, cfg.Log)
 	if err != nil {
 		return err
@@ -57,6 +59,10 @@ func (t *helperTun) Start(cfg TunConfig) error {
 }
 
 func (t *helperTun) LUID() uint64 { return 0 }
+
+func (t *helperTun) RelayEdgeDialer() func(context.Context, string, string) (net.Conn, error) {
+	return t.binding.DialRelayEdge
+}
 
 func (t *helperTun) Close() {
 	if t.helper != nil {

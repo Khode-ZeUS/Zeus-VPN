@@ -11,7 +11,6 @@ import (
 )
 
 const (
-	probeTarget     = "www.cloudflare.com:443"
 	probeInterval   = 10 * time.Second
 	retryInterval   = 3 * time.Second
 	failsBeforeDrop = 3
@@ -19,7 +18,7 @@ const (
 	failsBeforeFailover = 6
 )
 
-// probe checks that the tunnel can still open a connection.
+// probe checks that the tunnel still carries HTTPS traffic.
 func (e *Engine) probe(ctx context.Context) error {
 	e.mu.Lock()
 	up := e.up
@@ -27,14 +26,8 @@ func (e *Engine) probe(ctx context.Context) error {
 	if up == nil {
 		return errors.New("no tunnel")
 	}
-	pctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	c, err := up.Dial(pctx, probeTarget)
-	if err != nil {
-		return err
-	}
-	c.Close()
-	return nil
+	_, _, err := probeExit(ctx, up, exitProbeURL, nil)
+	return err
 }
 
 // healthLoop notices when the tunnel stops working, reports it as
@@ -145,7 +138,8 @@ func (e *Engine) failover(ctx context.Context) {
 	e.mu.Unlock()
 	if tun != nil {
 		if rp, ok := tun.(RouteProtector); ok {
-			rp.UpdateProtected(up.Addrs(), ep.Port)
+			addrs, port := up.SocketRoute()
+			rp.UpdateProtected(addrs, port)
 		}
 	}
 	e.Log("info", fmt.Sprintf("trying another server: %s (%s)", ep.Addr(), ep.CityName))

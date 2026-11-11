@@ -79,6 +79,13 @@ final class WebLoginViewController: UIViewController, WKScriptMessageHandler, WK
                 break
             }
             DispatchQueue.main.async { [weak self] in
+                if error != nil {
+                    let alert = UIAlertController(title: "Sign-in could not finish",
+                        message: "Close this page and try signing in again.", preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: "OK", style: .default))
+                    self?.present(alert, animated: true)
+                    return
+                }
                 self?.dismiss(animated: true)
             }
         }

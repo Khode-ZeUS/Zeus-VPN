@@ -89,8 +89,13 @@ const webChannelForward = `var forward = function(detail) {
     var token = String(data.sessionToken || data.token || '').trim();
     var email = String(data.email || '');
     var verified = (data.verified === undefined) ? true : !!data.verified;
-    if (cmd === 'fxaccounts:login' || cmd === 'fxaccounts:oauth_login' || /verified/i.test(cmd)) {
+    var verificationNotice = /(?:^|[:_])verified$/i.test(cmd);
+    if (cmd === 'fxaccounts:login' || cmd === 'fxaccounts:oauth_login' || verificationNotice) {
       if (msg.messageId) reply(msg.messageId, cmd, {ok:true});
+      if (verificationNotice && verified && !token) {
+        token = sessionStorage.getItem('zeusToken') || '';
+        email = email || sessionStorage.getItem('zeusEmail') || '';
+      }
       if (!token) return;
       if (verified) {
         if (preferBrowserExchange && !exchangeFailed) {
@@ -179,11 +184,11 @@ const inPageExchange = `var zeusExchange = function(sessionToken, email) {
 };
 `
 
-const successWatch = `var pingSuccess = function() {
+const successWatch = `var pingSuccess = function(verificationSucceeded) {
   try {
     var u = window.location.href.toLowerCase();
     var st = sessionStorage.getItem('zeusToken') || '';
-    var success = u.indexOf('/signin_confirmed') !== -1 || u.indexOf('connect_another_device') !== -1 ||
+    var success = verificationSucceeded || u.indexOf('/signin_confirmed') !== -1 || u.indexOf('connect_another_device') !== -1 ||
                   u.indexOf('/settings') !== -1 || u.indexOf('/complete') !== -1 || u.indexOf('success') !== -1;
     if (st && success && !exchangeFailed) {
       zeusExchange(st, sessionStorage.getItem('zeusEmail') || '');
@@ -198,7 +203,7 @@ if (window.fetch) {
   window.fetch = function() {
     var url = (arguments[0] && arguments[0].url) || arguments[0] || '';
     return origFetch.apply(this, arguments).then(function(res) {
-      try { if (res && res.ok && String(url).indexOf('/session/verify') !== -1) pingSuccess(); } catch (e) {}
+      try { if (res && res.ok && /\/session\/verify(?:[?#]|$)/.test(String(url))) pingSuccess(true); } catch (e) {}
       return res;
     });
   };
